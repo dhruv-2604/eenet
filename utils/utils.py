@@ -6,7 +6,7 @@ import shutil
 import models
 import torch
 
-from op_counter import measure_model
+from .op_counter import measure_model
 
 
 def save_checkpoint(state, args, is_best, filename, result, prec1_per_exit, prec5_per_exit):
@@ -48,7 +48,7 @@ def load_checkpoint(args):
     else:
         return None
     print("=> loading checkpoint '{}'".format(model_filename))
-    state = torch.load(model_filename)
+    state = torch.load(model_filename, map_location='cpu', weights_only=False)
     print("=> loaded checkpoint '{}'".format(model_filename))
     return state
 
@@ -143,9 +143,9 @@ def measure_flops(args, params):
 
 def load_state_dict(args, model):
     if args.use_gpu:
-        state_dict = torch.load(args.evaluate_from)['state_dict']
+        state_dict = torch.load(args.evaluate_from, weights_only=False)['state_dict']
     else:
-        state_dict = torch.load(args.evaluate_from, map_location='cpu')['state_dict']
+        state_dict = torch.load(args.evaluate_from, map_location='cpu', weights_only=False)['state_dict']
 
     if not args.use_gpu:
         state_dict_ = {}

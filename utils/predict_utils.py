@@ -10,21 +10,21 @@ import time
 
 import pandas as pd
 
-from predict_helpers import *
+from .predict_helpers import *
 
 
 def dynamic_evaluate(model, test_loader, val_loader, args):
     tester = Tester(model, args)
     if os.path.exists(os.path.join(args.save_path, 'logits_single.pth')):
         val_pred, val_target, test_pred, test_target = \
-            torch.load(os.path.join(args.save_path, 'logits_single.pth'))
+            torch.load(os.path.join(args.save_path, 'logits_single.pth'), weights_only=False)
     else:
         val_pred, val_target, val_time = tester.calc_logit(val_loader)
         test_pred, test_target, test_time = tester.calc_logit(test_loader)
         torch.save((val_pred, val_target, test_pred, test_target),
                    os.path.join(args.save_path, 'logits_single.pth'))
 
-    flops = torch.load(os.path.join(args.save_path, 'flops.pth'))
+    flops = torch.load(os.path.join(args.save_path, 'flops.pth'), weights_only=False)
     if not flops:
         flops = [1, 2, 3, 4]
     seconds = pd.read_csv(os.path.join(args.save_path, 'seconds.csv'), header=None)

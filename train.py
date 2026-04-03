@@ -37,8 +37,8 @@ def train(model, train_loader, criterion, optimizer, epoch, args, train_params):
 
         data_time.update(time.time() - end)
 
-        if args.use_gpu:
-            target = target.cuda()
+        input = input.to(args.device)
+        target = target.to(args.device)
 
         input_var = torch.autograd.Variable(input)
         target_var = torch.autograd.Variable(target)
@@ -49,11 +49,16 @@ def train(model, train_loader, criterion, optimizer, epoch, args, train_params):
         et = time.time()
         avg_time.append(et - st)
 
+        if isinstance(output, tuple):
+            output, _ = output
         if not isinstance(output, list):
             output = [output]
 
-        loss = torch.tensor(0)
+        loss = torch.tensor(0.0, device=args.device)
         for j in range(len(output)):
+            # First 20 epochs: only train backbone via final exit
+            if epoch < 20 and j < len(output) - 1:
+                continue
             loss += (j + 1) * criterion(output[j], target_var) / (args.num_exits * (args.num_exits + 1))
             if epoch > train_params['num_epoch'] * 0.75 and j < len(output) - 1:
                 T = 3

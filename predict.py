@@ -27,9 +27,8 @@ def validate(model, val_loader, criterion, args):
     end = time.time()
     with torch.no_grad():
         for i, (input, target) in enumerate(val_loader):
-            if args.use_gpu:
-                target = target.cuda()
-                input = input.cuda()
+            input = input.to(args.device)
+            target = target.to(args.device)
 
             input_var = torch.autograd.Variable(input)
             target_var = torch.autograd.Variable(target)
@@ -40,7 +39,7 @@ def validate(model, val_loader, criterion, args):
             if not isinstance(output, list):
                 output = [output]
 
-            loss = torch.zeros(0)
+            loss = torch.zeros(1, device=args.device)
             for j in range(len(output)):
                 if 'bert' in model.__class__.__name__:
                     loss += (j + 1) * criterion(output[j], target_var) / (args.num_exits * (args.num_exits + 1))

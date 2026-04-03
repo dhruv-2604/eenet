@@ -17,7 +17,7 @@ from args import arg_parser, modify_args
 from config import Config
 from data_tools.dataloader import get_dataloaders
 from predict import validate
-from predict_utils import dynamic_evaluate
+from utils.predict_utils import dynamic_evaluate
 from train import train
 from utils import save_checkpoint, load_checkpoint, measure_flops, load_state_dict
 
@@ -39,6 +39,15 @@ def main():
     if not os.path.exists(args.save_path):
         os.makedirs(args.save_path)
 
+    # Device detection: CUDA > MPS > CPU
+    if args.use_gpu and torch.cuda.is_available():
+        args.device = torch.device('cuda')
+    elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        args.device = torch.device('mps')
+    else:
+        args.device = torch.device('cpu')
+    print(f'Using device: {args.device}')
+
     config = Config()
 
     measure_flops(args, {**config.model_params[args.data][args.arch]})
@@ -46,11 +55,8 @@ def main():
     args.num_exits = config.model_params[args.data][args.arch]['num_blocks']
     args.inference_params = config.inference_params[args.data][args.arch]
 
-    if args.use_gpu:
-        model = model.cuda()
-        criterion = nn.CrossEntropyLoss().cuda()
-    else:
-        criterion = nn.CrossEntropyLoss()
+    model = model.to(args.device)
+    criterion = nn.CrossEntropyLoss().to(args.device)
 
     base_params = [v for k, v in model.named_parameters() if 'ee' not in k]
     exit_params = [v for k, v in model.named_parameters() if 'ee' in k]

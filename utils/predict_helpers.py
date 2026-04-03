@@ -125,7 +125,7 @@ class ExitAssigner(nn.Module):
         else:
             thr = None
 
-        return loss, thr, probs, (bce_loss, ce_loss, cost_loss), loss_
+        return loss, thr, probs, (bce_loss, kl_loss, cost_loss), loss_
 
     def get_threshold(self):
         return self.thresholds

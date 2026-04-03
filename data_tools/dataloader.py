@@ -4,10 +4,14 @@ import pandas as pd
 import torch
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
-from datasets import load_dataset
 from torch.utils.data import DataLoader
-from transformers import AutoTokenizer
 from torch.nn.utils.rnn import pad_sequence
+
+try:
+    from datasets import load_dataset
+    from transformers import AutoTokenizer
+except ImportError:
+    pass
 
 
 def get_dataloaders(args, batch_size):
@@ -150,7 +154,7 @@ def get_dataloaders(args, batch_size):
             train_set_index = torch.randperm(len(train_set))
             if os.path.exists(os.path.join(args.save_path, 'index.pth')):
                 print('!!!!!! Load train_set_index !!!!!!')
-                train_set_index = torch.load(os.path.join(args.save_path, 'index.pth'))
+                train_set_index = torch.load(os.path.join(args.save_path, 'index.pth'), weights_only=False)
             else:
                 print('!!!!!! Save train_set_index !!!!!!')
                 torch.save(train_set_index, os.path.join(args.save_path, 'index.pth'))
