@@ -2,6 +2,7 @@ import math
 import numpy as np
 import os
 import shutil
+import time
 
 import models
 import torch
@@ -139,6 +140,46 @@ def measure_flops(args, params):
     n_flops, n_params = measure_model(model, args.image_size[0], args.image_size[1], exit_idx=4)
     torch.save(n_flops, os.path.join(args.save_path, 'flops.pth'))
     del (model)
+
+
+def benchmark_exit_times(model, args, num_warmup=10, num_iters=30, batch_size=1):
+    if os.path.exists(os.path.join(args.save_path, 'seconds.csv')):
+        return
+
+    model.eval()
+
+    def synchronize():
+        if args.device.type == 'cuda':
+            torch.cuda.synchronize(args.device)
+        elif args.device.type == 'mps':
+            torch.mps.synchronize()
+
+    if args.data in ['sst2', 'ag_news']:
+        sample = torch.randint(0, 30522, (batch_size, args.image_size[1]), device=args.device)
+    else:
+        sample = torch.randn(batch_size, 3, args.image_size[0], args.image_size[1], device=args.device)
+
+    if args.num_exits == 1:
+        manual_exit_indices = [0]
+    else:
+        manual_exit_indices = list(range(1, args.num_exits)) + [0]
+
+    latencies_ms = []
+    with torch.no_grad():
+        for exit_idx in manual_exit_indices:
+            samples = []
+            for _ in range(num_warmup + num_iters):
+                synchronize()
+                st = time.perf_counter()
+                model(sample, manual_early_exit_index=exit_idx)
+                synchronize()
+                elapsed_ms = (time.perf_counter() - st) * 1000.0
+                samples.append(elapsed_ms)
+            latencies_ms.append(sum(samples[num_warmup:]) / num_iters)
+
+    with open(os.path.join(args.save_path, 'seconds.csv'), 'w') as fout:
+        for latency in latencies_ms:
+            fout.write(f'{latency}\n')
 
 
 def load_state_dict(args, model):

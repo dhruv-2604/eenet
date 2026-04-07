@@ -21,6 +21,7 @@ Inter-segment protocol for distributed inference:
 Usage:
     cd EENet && python partition_model.py
 """
+import argparse
 import os, sys, math, pickle as pkl
 import numpy as np
 import torch
@@ -37,33 +38,38 @@ from args import arg_parser, modify_args
 from utils.predict_helpers import prepare_input
 from utils.predict_utils import test_exit_assigner
 
-# ── Config ─────────────────────────────────────────────────────────────────
-MODEL_PATH   = 'outputs/densenet121_4_cifar100/save_models/model_best.pth.tar'
-SAVE_PATH    = 'outputs/densenet121_4_None_cifar100'
-SEGMENTS_DIR = 'outputs/segments'
-DATA_ROOT    = 'datasets'
-BUDGET_FOR_VERIFY = 6.5   # use the 6.5ms scheduler (already trained) for verification
-N_VERIFY     = 10
-os.makedirs(SEGMENTS_DIR, exist_ok=True)
+partition_parser = argparse.ArgumentParser(parents=[arg_parser], conflict_handler='resolve')
+partition_parser.set_defaults(
+    data='cifar100',
+    data_root='datasets',
+    arch='densenet121_4',
+    use_valid=True,
+    evalmode='dynamic',
+    save_path='outputs/smoke_cifar100',
+)
+partition_parser.add_argument('--segments-dir', default='outputs/segments',
+                              help='Directory where partitioned model segments will be saved.')
+partition_parser.add_argument('--budget-for-verify', default=6.5, type=float,
+                              help='Scheduler budget to use for verification.')
+partition_parser.add_argument('--num-verify', default=10, type=int,
+                              help='Number of test images to verify.')
 
-# ── Build args ─────────────────────────────────────────────────────────────
-args = arg_parser.parse_args([
-    '--data', 'cifar100', '--data-root', DATA_ROOT,
-    '--save-path', SAVE_PATH, '--arch', 'densenet121_4', '--use-valid',
-    '--evalmode', 'dynamic', '--evaluate-from', MODEL_PATH,
-])
+args = partition_parser.parse_args()
 args = modify_args(args)
 args.print_freq = 100
 args.use_gpu = False
 args.device  = torch.device('cpu')
 torch.manual_seed(0)
+if args.evaluate_from is None:
+    args.evaluate_from = os.path.join(args.save_path, 'save_models', 'model_best.pth.tar')
+os.makedirs(args.segments_dir, exist_ok=True)
 
 config = Config()
 args.num_exits = config.model_params[args.data][args.arch]['num_blocks']  # 4
 
 # ── Load model ─────────────────────────────────────────────────────────────
 model = getattr(models, args.arch)(args, {**config.model_params[args.data][args.arch]})
-sd = torch.load(MODEL_PATH, map_location='cpu', weights_only=False)['state_dict']
+sd = torch.load(args.evaluate_from, map_location='cpu', weights_only=False)['state_dict']
 model.load_state_dict(sd, strict=False)
 model.eval()
 print("Model loaded.")
@@ -71,14 +77,14 @@ print("Model loaded.")
 # ── Load EENet scheduler ───────────────────────────────────────────────────
 # Try both filename variants (with/without trailing _)
 for suffix in ['_.pkl', '.pkl']:
-    ea_path = os.path.join(SAVE_PATH, f'ea_pkls/ea_{BUDGET_FOR_VERIFY}{suffix}')
+    ea_path = os.path.join(args.save_path, f'ea_pkls/ea_{args.budget_for_verify}{suffix}')
     if os.path.exists(ea_path):
         ea = pkl.load(open(ea_path, 'rb'))
         print(f"Loaded scheduler: {ea_path}")
         break
 else:
     raise FileNotFoundError(
-        f"No scheduler found for budget={BUDGET_FOR_VERIFY}ms. "
+        f"No scheduler found for budget={args.budget_for_verify}ms. "
         "Run run_scheduling.py first."
     )
 
@@ -274,24 +280,24 @@ print("  Seg2→Seg3: feat (B,96,8,8)    + scores_01 (B,2)")
 print("  Seg3→Seg4: feat (B,192,4,4)   + scores_012 (B,3)  [unused by seg4]")
 
 # ── Save segments as .pt files ─────────────────────────────────────────────
-print(f"\nSaving segments to {SEGMENTS_DIR}/")
+print(f"\nSaving segments to {args.segments_dir}/")
 for idx, seg in enumerate([seg1, seg2, seg3, seg4], start=1):
-    torch.save(seg, os.path.join(SEGMENTS_DIR, f'segment{idx}.pt'))
+    torch.save(seg, os.path.join(args.segments_dir, f'segment{idx}.pt'))
     print(f"  segment{idx}.pt  saved")
 
 # ── Verification ───────────────────────────────────────────────────────────
 print(f"\n{'='*60}")
-print(f"VERIFICATION: {N_VERIFY} test images")
+print(f"VERIFICATION: {args.num_verify} test images")
 print("="*60)
 
 normalize = transforms.Normalize(mean=[0.5071, 0.4867, 0.4408],
                                   std=[0.2675, 0.2565, 0.2761])
-test_set = datasets.CIFAR100(DATA_ROOT, train=False, download=True,
+test_set = datasets.CIFAR100(args.data_root, train=False, download=True,
                                transform=transforms.Compose([
                                    transforms.ToTensor(), normalize
                                ]))
-imgs   = torch.stack([test_set[i][0] for i in range(N_VERIFY)])
-labels = [test_set[i][1] for i in range(N_VERIFY)]
+imgs   = torch.stack([test_set[i][0] for i in range(args.num_verify)])
+labels = [test_set[i][1] for i in range(args.num_verify)]
 
 seg1.eval(); seg2.eval(); seg3.eval(); seg4.eval()
 softmax_fn = nn.Softmax(dim=1)
@@ -299,12 +305,12 @@ softmax_fn = nn.Softmax(dim=1)
 # Step 1: Full model forward pass (single call, all exits)
 with torch.no_grad():
     full_logits_batch, _ = model(imgs, manual_early_exit_index=0)
-    full_logits = [l.cpu() for l in full_logits_batch]  # list of 4 × (10, 100)
+    full_logits = [l.cpu() for l in full_logits_batch]
 
 # Step 2: Segmented forward pass (sequential, passing activations between segments)
 with torch.no_grad():
     seg_logits = []
-    for i in range(N_VERIFY):
+    for i in range(args.num_verify):
         xi = imgs[i:i+1]
         f1i, l1i = seg1(xi)
         f2i, l2i = seg2(f1i)
@@ -316,23 +322,23 @@ with torch.no_grad():
 print("\n[Test 1] Logit outputs match (full model vs segmented pass):")
 tol = 1e-4
 all_match = True
-for i in range(N_VERIFY):
+for i in range(args.num_verify):
     for k in range(4):
         diff = (full_logits[k][i] - seg_logits[i][k][0]).abs().max().item()
         if diff > tol:
             print(f"  MISMATCH  img={i} exit={k+1}  max_diff={diff:.6f}")
             all_match = False
 if all_match:
-    print(f"  ALL {N_VERIFY}×4 outputs match within tol={tol}  ✓")
+    print(f"  ALL {args.num_verify}x4 outputs match within tol={tol}  OK")
 
 # Step 4: Compute exit decisions via EENet for both full and segmented
 # Build softmax pred tensors of shape (n_stage, N_VERIFY, 100)
-full_pred_soft = torch.zeros(4, N_VERIFY, 100)
+full_pred_soft = torch.zeros(4, args.num_verify, 100)
 for k in range(4):
     full_pred_soft[k] = softmax_fn(full_logits[k])
 
-seg_pred_soft = torch.zeros(4, N_VERIFY, 100)
-for i in range(N_VERIFY):
+seg_pred_soft = torch.zeros(4, args.num_verify, 100)
+for i in range(args.num_verify):
     for k in range(4):
         seg_pred_soft[k, i] = softmax_fn(seg_logits[i][k])
 
@@ -355,14 +361,14 @@ seg_exits  = decisions_from_nn(seg_nn,  T)
 print(f"\n[Test 2] Exit decisions match (same images exit at same point):")
 decision_match = True
 print(f"  {'Image':>5} | {'Label':>5} | {'Full exit':>9} | {'Seg exit':>8} | Match")
-for i in range(N_VERIFY):
-    match_sym = "✓" if full_exits[i] == seg_exits[i] else "✗"
+for i in range(args.num_verify):
+    match_sym = "OK" if full_exits[i] == seg_exits[i] else "X"
     print(f"  {i:>5} | {labels[i]:>5} | {full_exits[i]:>9} | {seg_exits[i]:>8} | {match_sym}")
     if full_exits[i] != seg_exits[i]:
         decision_match = False
 
 if decision_match:
-    print(f"\n  ALL {N_VERIFY} exit decisions match  ✓")
+    print(f"\n  ALL {args.num_verify} exit decisions match  OK")
 else:
     print(f"\n  WARNING: some decisions differ")
 
@@ -370,15 +376,15 @@ else:
 print(f"\n{'='*60}")
 print("SAVED SEGMENT FILES")
 print("="*60)
-for fname in sorted(os.listdir(SEGMENTS_DIR)):
-    fpath = os.path.join(SEGMENTS_DIR, fname)
+for fname in sorted(os.listdir(args.segments_dir)):
+    fpath = os.path.join(args.segments_dir, fname)
     size_kb = os.path.getsize(fpath) / 1024
     print(f"  {fname}  ({size_kb:.0f} KB)")
 
 print(f"\nPartitioning complete.")
-print(f"Segments are in: {SEGMENTS_DIR}/")
+print(f"Segments are in: {args.segments_dir}/")
 print(f"\nTo load a segment in a peer process:")
-print(f"  seg = torch.load('outputs/segments/segment1.pt', weights_only=False)")
+print(f"  seg = torch.load('{args.segments_dir}/segment1.pt', weights_only=False)")
 print(f"  seg.eval()")
 print(f"  feat, logit = seg(img_tensor)")
 print(f"  score = seg.compute_score(logit, past_scores=None)")

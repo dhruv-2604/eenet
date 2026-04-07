@@ -19,7 +19,7 @@ from data_tools.dataloader import get_dataloaders
 from predict import validate
 from utils.predict_utils import dynamic_evaluate
 from train import train
-from utils import save_checkpoint, load_checkpoint, measure_flops, load_state_dict
+from utils import save_checkpoint, load_checkpoint, measure_flops, load_state_dict, benchmark_exit_times
 
 # import sys
 # if all(['models' not in sys.path]):
@@ -77,6 +77,7 @@ def main():
 
     batch_size = args.batch_size if args.batch_size else config.training_params[args.data][args.arch]['batch_size']
     train_loader, val_loader, test_loader = get_dataloaders(args, batch_size)
+    benchmark_exit_times(model, args)
 
     if args.evalmode is not None:
         load_state_dict(args, model)

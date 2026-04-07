@@ -20,12 +20,12 @@ class ScoreNormalizer(nn.Module):
         self.prob_out = nn.Sequential(nn.Linear(in_dim, mid_dim), nn.Sigmoid(), nn.Linear(mid_dim, 1), nn.Sigmoid())
 
     def forward(self, X):
-        q_hat = self.q_layer_1(X[:, :self.c]) * self.alpha_adj + self.q_layer_2(X[:, self.c:]).unsqueeze(-1)
+        q_hat = self.q_layer_1(X[:, :self.c]) * self.alpha_adj + self.q_layer_2(X[:, self.c:])
         r_ = self.prob_out(X)
         return q_hat, r_
 
     def predict(self, X):
-        q_hat = self.q_layer_1(X[:, :self.c]) * self.alpha_adj + self.q_layer_2(X[:, self.c:]).unsqueeze(-1)
+        q_hat = self.q_layer_1(X[:, :self.c]) * self.alpha_adj + self.q_layer_2(X[:, self.c:])
         return q_hat
 
 
@@ -202,6 +202,7 @@ def fit_exit_assigner(pred, target, costs, budget, alpha_ce, alpha_cost, beta_th
         loss_tuple_list = []
         for start_idx in np.arange(0, num_sample, batch_size):
             end_idx = start_idx + batch_size
+            optimizer.zero_grad()
             loss, _, _, loss_tuple, loss_ = m.compute_loss(pred[:, perm[start_idx: end_idx]], target[perm[start_idx: end_idx]],
                                                                [X[perm[start_idx: end_idx]] for X in X_list], opt_q_flag, opt_r_flag)
             loss.backward()

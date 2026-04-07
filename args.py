@@ -26,7 +26,9 @@ def modify_args(args):
         args.num_classes = 4
 
     if not hasattr(args, "save_path") or args.save_path is None:
-        args.save_path = f"outputs/{args.arch}_{args.evalmode}_{args.data}_{format(str(datetime.datetime.now()))}"
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        evalmode = args.evalmode if args.evalmode is not None else "train"
+        args.save_path = f"outputs/{args.arch}_{evalmode}_{args.data}_{timestamp}"
 
     if args.data.startswith('cifar'):
         args.image_size = (32, 32)
@@ -41,7 +43,7 @@ def modify_args(args):
     return args
 
 
-model_names = ['msdnet35_5', 'resnet56_3', 'densenet121_4', 'bert_4']
+model_names = ['msdnet35_5', 'resnet56_1', 'resnet56_3', 'densenet121_1', 'densenet121_4', 'bert_1', 'bert_4']
 
 arg_parser = argparse.ArgumentParser(
     description='Image classification PK main script')
@@ -62,7 +64,8 @@ exp_group.add_argument('--print-freq', '-p', default=10, type=int,
 exp_group.add_argument('--seed', default=0, type=int,
                        help='random seed')
 exp_group.add_argument('--gpu_idx', default=None, type=str, help='Index of available GPU')
-exp_group.add_argument('--use_gpu', default=False, type=bool, help='Use CPU if False')
+exp_group.add_argument('--use-gpu', '--use_gpu', dest='use_gpu', action='store_true',
+                       help='Use CUDA when available')
 
 # dataset related
 data_group = arg_parser.add_argument_group('data', 'dataset setting')
@@ -89,7 +92,7 @@ optim_group = arg_parser.add_argument_group('optimization',
                                             'optimization setting')
 optim_group.add_argument('--start-epoch', default=0, type=int, metavar='N',
                          help='manual epoch number (useful on restarts)')
-optim_group.add_argument('-b', '--batch-size', default=1, type=int, help='mini-batch size')
+optim_group.add_argument('-b', '--batch-size', default=None, type=int, help='mini-batch size')
 
 # inference related
 optim_group = arg_parser.add_argument_group('inference', 'inference setting')
