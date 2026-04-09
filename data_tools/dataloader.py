@@ -201,7 +201,7 @@ def get_dataloaders(args, batch_size):
                 train_set,
                 batch_size=batch_size, shuffle=True,
                 num_workers=args.workers, pin_memory=True, collate_fn=cfn)
-        if 'val' or 'test' in args.splits:
+        if 'val' in args.splits or 'test' in args.splits:
             val_loader = torch.utils.data.DataLoader(
                 test_set,
                 batch_size=batch_size, shuffle=False,
