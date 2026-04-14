@@ -27,7 +27,7 @@ from utils.predict_utils import test_exit_assigner
 MODEL_PATH = 'outputs/densenet121_4_cifar100/save_models/model_best.pth.tar'
 SAVE_PATH  = 'outputs/densenet121_4_None_cifar100'
 DATA_ROOT  = 'datasets'
-BUDGETS    = [7.5, 6.75, 6.0]   # ms per sample (between exit2=5.3ms and exit3=9.53ms)
+BUDGETS    = [7.5, 6.75, 6.5, 6.0]   # FIX 2: added 6.5 required by partition_model.py
 BATCH_SIZE = 64
 
 # ── Build args ─────────────────────────────────────────────────────────────
@@ -161,7 +161,7 @@ for budget in BUDGETS:
     for candidate in [ea_path, ea_path.replace('_.pkl', '.pkl')]:
         if os.path.exists(candidate):
             ea    = pkl.load(open(candidate, 'rb'))
-            pfn   = candidate.replace('ea_', 'probs_')
+            pfn   = os.path.join(SAVE_PATH, f'ea_pkls/probs_{budget}_.pkl')  # FIX 1: construct path directly
             probs = pkl.load(open(pfn, 'rb'))
             print(f"\n[Budget {budget}ms] Loaded cached scheduler from {candidate}")
             break
