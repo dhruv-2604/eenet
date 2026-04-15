@@ -59,11 +59,11 @@ class ExitAssigner(nn.Module):
         for k in range(self.num_exit):
             X = X_list[k].clone()
             if k > 0:
-                past_scores = torch.stack([score[k_].detach().flatten() for k_ in range(k)], dim=-1)  # FIX 2: flatten before stack
+                past_scores = torch.stack([score[k_].detach().flatten() for k_ in range(k)], dim=-1)
                 X = torch.concat([X, past_scores], dim=-1)
             q, prob_out = self.score_normalizers[k].forward(X)
-            q = q.reshape(q.shape[0], -1)          # FIX 3: reshape q
-            prob_out = prob_out.reshape(prob_out.shape[0], -1)  # FIX 3: reshape prob_out
+            q = q.reshape(q.shape[0], -1)
+            prob_out = prob_out.reshape(prob_out.shape[0], -1)
             score_.append(q[:, 0])
             q = torch.clamp(q, 0, 1)
             score.append(q[:, 0])
@@ -86,7 +86,7 @@ class ExitAssigner(nn.Module):
 
         bce_loss = torch.zeros(1).to(bce_weight.device)
         for k in range(self.num_exit):
-            bce_loss += nn.BCELoss(weight=bce_weight[:, k], reduction='sum')(torch.clamp(score[:, k].flatten(), 0, 1), acc_matrix[:, k].flatten())  # FIX 4: clamp at BCE call
+            bce_loss += nn.BCELoss(weight=bce_weight[:, k], reduction='sum')(torch.clamp(score[:, k].flatten(), 0, 1), acc_matrix[:, k].flatten())
         bce_loss /= self.num_exit
 
         # ---------------------------------
