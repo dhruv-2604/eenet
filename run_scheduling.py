@@ -27,7 +27,7 @@ from utils.predict_utils import test_exit_assigner
 MODEL_PATH = 'outputs/densenet121_4_cifar100/save_models/model_best.pth.tar'
 SAVE_PATH  = 'outputs/densenet121_4_None_cifar100'
 DATA_ROOT  = 'datasets'
-BUDGETS    = [7.5, 6.75, 6.5, 6.0]   # FIX 2: added 6.5 required by partition_model.py
+BUDGETS    = [7.5, 6.75, 6.5, 6.0]
 BATCH_SIZE = 64
 
 # ── Build args ─────────────────────────────────────────────────────────────
@@ -41,13 +41,12 @@ args = modify_args(args)
 args.print_freq = 100
 torch.manual_seed(0)
 
-# Prefer MPS for inference; keep scheduler training on CPU (small MLP)
 if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
     infer_device = torch.device('mps')
 else:
     infer_device = torch.device('cpu')
 args.device = infer_device
-args.use_gpu = False   # keeps logit tensors on CPU (required by fit_exit_assigner)
+args.use_gpu = False 
 print(f"Inference device: {infer_device}")
 
 config = Config()
@@ -161,7 +160,7 @@ for budget in BUDGETS:
     for candidate in [ea_path, ea_path.replace('_.pkl', '.pkl')]:
         if os.path.exists(candidate):
             ea    = pkl.load(open(candidate, 'rb'))
-            pfn   = os.path.join(SAVE_PATH, f'ea_pkls/probs_{budget}_.pkl')  # FIX 1: construct path directly
+            pfn   = os.path.join(SAVE_PATH, f'ea_pkls/probs_{budget}_.pkl') 
             probs = pkl.load(open(pfn, 'rb'))
             print(f"\n[Budget {budget}ms] Loaded cached scheduler from {candidate}")
             break
