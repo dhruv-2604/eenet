@@ -1,112 +1,275 @@
+"""
+eigentrust.py — PygenTrust-compatible EigenTrust engine for EENet.
+
+Implements the same public API as PygenTrust (mattyTokenomics/PygenTrust)
+with zero external dependencies beyond NumPy, so it drops in whether or
+not the pip package is available.
+
+Public API
+----------
+eigentrust(C, p, epsilon, alpha) -> np.ndarray
+    C       : (N, N) raw local-trust matrix  C[i,j] = how much peer i trusts peer j
+    p       : (N,)   pre-trust vector (uniform by default)
+    epsilon : convergence tolerance          (default 1e-6)
+    alpha   : weight on pre-trust vs peers   (default 0.1)
+    returns : (N,) global trust vector, sums to 1
+
+EigenTrustTracker
+    Stateful wrapper for EENet — accumulates per-peer evidence signals
+    across batches, builds C, runs convergence, exposes trust-scaled
+    thresholds back to the ExitAssigner.
+"""
+
 import numpy as np
-from scipy.sparse import csr_matrix, lil_matrix
-import random
-import tqdm
 
-def initialize_local_trust_matrix(n=100):
-    return np.zeros((n, n))
 
-def initalize_global_trust_scores(n=100,p=10):
-    if p > n or p <= 0:
-        raise ValueError("p must be a positive integer less than or equal to n")
+# ── Core algorithm ─────────────────────────────────────────────────────────
 
-    # Initialize the first p elements with 1/p
-    trust_scores = [1/p if i < p else 0 for i in range(n)]
-    return trust_scores
+def _normalise_rows(C: np.ndarray) -> np.ndarray:
+    """Row-normalise C so each row sums to 1 (or stays zero for isolates)."""
+    row_sums = C.sum(axis=1, keepdims=True)
+    row_sums = np.where(row_sums == 0, 1.0, row_sums)   # avoid /0
+    return C / row_sums
 
-def peer_interaction(local_scores, peer1, peer2, interaction):
-    local_scores[peer1, peer2] += interaction
-    return local_scores
 
-def generate_random_peer_interactions(local_scores,m=1_000):
-    num_peers = local_scores.shape[0]
+def eigentrust(
+    C: np.ndarray,
+    p: np.ndarray | None = None,
+    epsilon: float = 1e-6,
+    alpha: float = 0.1,
+    max_iter: int = 200,
+) -> np.ndarray:
+    """
+    EigenTrust iteration (Kamvar et al. 2003).
 
-    for _ in range(m):
-        peer1, peer2 = random.sample(range(num_peers), 2)
-        interaction = random.choice([-1, 1])
-        local_scores = peer_interaction(local_scores, peer1, peer2, interaction)
-    return local_scores
+    t_{k+1} = (1 - alpha) * C̃ᵀ t_k  +  alpha * p
 
-def normalize_local_scores(local_scores, global_scores):
-    n = local_scores.shape[0]
-    normalized_local_scores = lil_matrix((n, n))
+    Parameters
+    ----------
+    C       : (N, N) raw local trust scores (non-negative).
+    p       : (N,)  pre-trust vector.  Defaults to uniform 1/N.
+    epsilon : convergence threshold on L1 norm of successive iterates.
+    alpha   : weight of pre-trust vector (0 = pure peer trust, 1 = pure pre-trust).
 
-    # Set diagonal elements to 0 to exclude self-voting
-    local_scores.setdiag(0)
+    Returns
+    -------
+    t : (N,) global trust vector, sums to 1.
+    """
+    N = C.shape[0]
+    if p is None:
+        p = np.ones(N, dtype=np.float64) / N
+    else:
+        p = np.asarray(p, dtype=np.float64)
+        p = p / p.sum()
 
-    for i in tqdm.tqdm(range(n)):
-        row = local_scores.getrow(i)
-        row_sum = row.data[row.data > 0].sum()
+    C_norm = _normalise_rows(np.asarray(C, dtype=np.float64))
 
-        if row_sum > 0:
-            normalized_row = row.multiply(row > 0) / row_sum
-            normalized_local_scores[i] = normalized_row
-        else:
-            # Handle the case where row sum is 0
-            normalized_local_scores[i] = csr_matrix(global_scores)
-
-    return normalized_local_scores.tocsr()
-
-# From whitepaper, Algorithm 2: Basic EigenTrust algorithm
-def basic_eigen_trust(local_scores, global_scores, alpha=0.1, convergence_threshold=0.01):
-    # Ensure local_scores is a csr_matrix
-    if not isinstance(local_scores, csr_matrix):
-        local_scores = csr_matrix(local_scores) #If this step is failing try intializing local_scores as a coo_matrix (scipy.sparse)
-
-    # Convert global_scores to a NumPy array if it is not already one
-    if not isinstance(global_scores, np.ndarray):
-        global_scores = np.array(global_scores)
-
-    # Normalize the local_scores first
-    local_scores = normalize_local_scores(local_scores, global_scores)
-
-    while True:
-        # Step 1: Multiply the transpose of normalized local scores with global scores
-        new_global_scores = local_scores.T.dot(global_scores)
-
-        # Step 2: Blend with existing global scores
-        new_global_scores = (1 - alpha) * new_global_scores + alpha * global_scores
-
-        # Step 3: Check for convergence
-        delta = np.linalg.norm(new_global_scores - global_scores)
-        if delta < convergence_threshold:
+    t = p.copy()
+    for _ in range(max_iter):
+        t_new = (1.0 - alpha) * C_norm.T @ t + alpha * p
+        if np.abs(t_new - t).sum() < epsilon:
+            t = t_new
             break
+        t = t_new
 
-        global_scores = new_global_scores
+    return t / t.sum()
 
-    return global_scores
 
-def add_new_peers(local_scores, global_scores, new_peers_count, malicious_collective=False):
-    n = local_scores.shape[0]
-    new_size = n + new_peers_count
-    new_local_scores = np.zeros((new_size, new_size))
+# ── EENet evidence accumulator ─────────────────────────────────────────────
 
-    # Copy existing data
-    new_local_scores[:n, :n] = local_scores
+class EigenTrustTracker:
+    """
+    Accumulates per-peer inference evidence across batches and converts it
+    into trust-scaled exit thresholds.
 
-    # Initialize new entries in local_scores for malicious collective
-    if (new_peers_count > 1) and malicious_collective:
-        new_peer_score = 1 / (new_peers_count - 1)
-        new_local_scores[n:, n:] = new_peer_score * np.ones((new_peers_count, new_peers_count))
-        np.fill_diagonal(new_local_scores[n:, n:], 0)  # Set self-interaction to 0
+    Peers map 1-to-1 onto EENet exits (Peer 0 → Exit 0, …, Peer K-1 → Exit K-1).
+    After every call to `update()` the global trust vector is recomputed and
+    `trust_scaled_thresholds()` returns thresholds modulated by each peer's
+    reputation.
 
-    # Update global_scores for new peers
-    new_global_scores = np.append(global_scores, np.zeros(new_peers_count))
+    Evidence signals collected per peer per batch
+    ---------------------------------------------
+    accuracy_at_exit : fraction of samples exiting here that were correct
+    latency_ok       : fraction of exits that met the latency budget
+    score_calibration: Pearson r between raw gk score and accuracy — how honest
+                       a peer's exit signal is
+    """
 
-    return new_local_scores, new_global_scores
+    def __init__(
+        self,
+        n_peers: int,
+        pre_trust: np.ndarray | None = None,
+        alpha: float = 0.1,
+        epsilon: float = 1e-6,
+        trust_scale: float = 0.2,
+        decay: float = 0.85,
+    ):
+        """
+        Parameters
+        ----------
+        n_peers     : number of peers / exits (must equal args.num_exits).
+        pre_trust   : (n_peers,) seed trust; defaults to uniform.
+        alpha       : EigenTrust pre-trust weight.
+        epsilon     : EigenTrust convergence tolerance.
+        trust_scale : max fractional threshold adjustment from trust  (±trust_scale).
+        decay       : exponential decay applied to C each round so old
+                      observations matter less over time.
+        """
+        self.n = n_peers
+        self.alpha = alpha
+        self.epsilon = epsilon
+        self.trust_scale = trust_scale
+        self.decay = decay
 
-if __name__ == "__main__":
-    # Test your functions here
-    n = 10
-    p = 5
-    m = 50
-    alpha = 0.1
-    convergence_threshold = 0.01
+        self.pre_trust = pre_trust
+        # Local trust matrix C[i, j] = how much peer i trusts peer j.
+        # Diagonal ignored by EigenTrust; off-diagonals reflect cross-peer trust.
+        self.C = np.ones((n_peers, n_peers), dtype=np.float64) - np.eye(n_peers)
+        self.C /= max(n_peers - 1, 1)          # uniform initialisation
 
-    local_scores = initialize_local_trust_matrix(n)
-    local_scores = generate_random_peer_interactions(local_scores, m)
-    initial_global_scores = initalize_global_trust_scores(n, p)
-    normalized_local_scores = normalize_local_scores(local_scores, initial_global_scores)
-    final_global_scores = basic_eigen_trust(normalized_local_scores, initial_global_scores, alpha, convergence_threshold)
+        # Running evidence per peer (exponential moving average)
+        self.accuracy   = np.full(n_peers, 0.5)    # start neutral
+        self.latency_ok = np.full(n_peers, 1.0)
+        self.calibration = np.full(n_peers, 0.5)
 
-    print(final_global_scores)
+        # Cached trust vector
+        self.trust = eigentrust(self.C, self.pre_trust, self.epsilon, self.alpha)
+
+        # History for logging
+        self.history: list[dict] = []
+
+    # ── public interface ───────────────────────────────────────────────────
+
+    def update(
+        self,
+        peer_id: int,
+        accuracy: float,
+        latency_ok: float,
+        score_calibration: float,
+        ema_momentum: float = 0.3,
+    ) -> np.ndarray:
+        """
+        Update evidence for `peer_id` and recompute global trust.
+
+        Parameters
+        ----------
+        peer_id           : which exit / peer is being evaluated (0-indexed).
+        accuracy          : fraction correct among samples that exited here.
+        latency_ok        : fraction of exits within latency budget (0–1).
+        score_calibration : correlation between gk score and accuracy (0–1).
+        ema_momentum      : weight on new observation vs old EMA.
+
+        Returns
+        -------
+        Updated global trust vector (n_peers,).
+        """
+        m = ema_momentum
+        self.accuracy[peer_id]    = (1 - m) * self.accuracy[peer_id]    + m * accuracy
+        self.latency_ok[peer_id]  = (1 - m) * self.latency_ok[peer_id]  + m * latency_ok
+        self.calibration[peer_id] = (1 - m) * self.calibration[peer_id] + m * score_calibration
+
+        self._rebuild_C(peer_id)
+        self.trust = eigentrust(self.C, self.pre_trust, self.epsilon, self.alpha)
+
+        self.history.append({
+            'peer': peer_id,
+            'accuracy': accuracy,
+            'latency_ok': latency_ok,
+            'calibration': score_calibration,
+            'trust': self.trust.copy(),
+        })
+        return self.trust
+
+    def trust_scaled_thresholds(self, base_thresholds: np.ndarray) -> np.ndarray:
+        """
+        Adjust base EENet thresholds by peer trust scores.
+
+        High-trust peers (trust > mean) get lower thresholds → more aggressive
+        early exiting.  Low-trust peers get higher thresholds → conservative,
+        samples pass through to more trusted downstream peers.
+
+        Parameters
+        ----------
+        base_thresholds : (n_peers,) thresholds from ExitAssigner.get_threshold().
+
+        Returns
+        -------
+        (n_peers,) adjusted thresholds, same scale as input.
+        """
+        t = self.trust
+        t_mean = t.mean()
+        # deviation from mean, normalised to [-1, 1]
+        t_dev = (t - t_mean) / (t.max() - t.min() + 1e-9)
+        # lower threshold for trusted peers, higher for untrusted
+        adjusted = base_thresholds - self.trust_scale * t_dev * base_thresholds
+        return np.clip(adjusted, 0.0, 1.0)
+
+    def peer_summary(self) -> dict:
+        """Return a readable dict of current evidence + trust per peer."""
+        return {
+            f'peer_{k}': {
+                'trust':       round(float(self.trust[k]), 4),
+                'accuracy':    round(float(self.accuracy[k]), 4),
+                'latency_ok':  round(float(self.latency_ok[k]), 4),
+                'calibration': round(float(self.calibration[k]), 4),
+            }
+            for k in range(self.n)
+        }
+
+    # ── internal ───────────────────────────────────────────────────────────
+
+    def _rebuild_C(self, updated_peer: int) -> None:
+        """
+        Rebuild C by having every other peer update its trust score for
+        `updated_peer` based on observed evidence.
+
+        Evidence composite score for peer j as seen by peer i:
+            quality_j = 0.5 * accuracy_j + 0.3 * latency_ok_j + 0.2 * calibration_j
+
+        Peers that performed above average earn positive trust updates;
+        those below average earn negative (but floored at 0).
+        """
+        # Apply decay to existing C to down-weight stale observations
+        self.C *= self.decay
+
+        j = updated_peer
+        quality = (
+            0.5 * self.accuracy[j]
+            + 0.3 * self.latency_ok[j]
+            + 0.2 * self.calibration[j]
+        )
+
+        for i in range(self.n):
+            if i == j:
+                continue
+            self.C[i, j] = max(0.0, quality)
+
+        # Row-normalise so each row sums to 1 (standard EigenTrust requirement)
+        row_sums = self.C.sum(axis=1, keepdims=True)
+        row_sums = np.where(row_sums == 0, 1.0, row_sums)
+        self.C = self.C / row_sums
+
+
+# ── Evidence helpers ────────────────────────────────────────────────────────
+
+def compute_score_calibration(
+    scores: np.ndarray,
+    correct: np.ndarray,
+) -> float:
+    """
+    Pearson correlation between gk scores and binary correctness.
+    Returns 0.5 (neutral) if fewer than 5 samples or zero variance.
+
+    Parameters
+    ----------
+    scores  : (N,) raw gk / ScoreNormalizer outputs for samples that exited here.
+    correct : (N,) binary array — 1 if prediction correct, 0 otherwise.
+    """
+    if len(scores) < 5:
+        return 0.5
+    s, c = np.asarray(scores, dtype=float), np.asarray(correct, dtype=float)
+    if s.std() < 1e-9 or c.std() < 1e-9:
+        return 0.5
+    r = np.corrcoef(s, c)[0, 1]
+    # Map from [-1, 1] to [0, 1]
+    return float(np.clip((r + 1.0) / 2.0, 0.0, 1.0))

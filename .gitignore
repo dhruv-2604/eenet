@@ -1,3 +1,11 @@
 .DS_store
 .idea
 *.pyc
+venv/
+venv/
+datasets/cifar-100-python/
+datasets/*.tar.gz
+outputs/**/*.pkl
+outputs/**/*.pth
+outputs/**/*.pt
+outputs/**/logits_single.pth
