@@ -1,0 +1,7 @@
+Using device: mps
+Loaded segment artifacts from outputs/segments
+!!!!!! Load train_set_index !!!!!!
+Loading cached logits from outputs/report_demo_eval/logits_single.pth
+
+Saved experiment tables to outputs/report_demo_figs
+Saved plots to outputs/report_demo_figs/figures

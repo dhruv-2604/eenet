@@ -1,0 +1,24 @@
+Using device: mps
+!!!!!! Save train_set_index !!!!!!
+Epoch: [0][1/2813]		Exit: 4	Time 2.562	Data 0.063	Loss 0.9416	Acc@1 0.0000	Acc@5 12.5000
+Epoch: [0][2/2813]		Exit: 4	Time 1.410	Data 0.033	Loss 0.9211	Acc@1 0.0000	Acc@5 12.5000
+Epoch: [0][3/2813]		Exit: 4	Time 0.966	Data 0.024	Loss 0.9363	Acc@1 0.0000	Acc@5 0.0000
+Epoch: [1/313]	Time 0.306	Data 0.012	Loss 4.6106	Acc@1 0.0000	Acc@5 0.0000
+Epoch: [2/313]	Time 0.171	Data 0.009	Loss 4.6123	Acc@1 0.0000	Acc@5 0.0000
+Epoch: [3/313]	Time 0.123	Data 0.007	Loss 4.6114	Acc@1 0.0000	Acc@5 12.5000
+ * prec@1 2.083 prec@5 2.083
+ * prec@1 0.000 prec@5 4.167
+ * prec@1 2.083 prec@5 6.250
+ * prec@1 0.000 prec@5 4.167
+Namespace(save_path='outputs/report_demo_train', resume=False, evalmode=None, evaluate_from=None, print_freq=1, seed=0, gpu_idx=None, use_gpu=False, data='cifar100', data_root='datasets', use_valid=True, workers=0, arch='densenet121_4', start_epoch=0, batch_size=16, num_epochs=1, max_train_batches=3, max_eval_batches=3, exit_distribution_method='nn', conf_mode='nn', inference_save_filename='dynamic', val_budget=None, splits=['train', 'val', 'test'], num_classes=100, image_size=(32, 32), device=device(type='mps'), num_exits=4, inference_params={'weight_decay': 0.01, 'beta_ce': 1, 'alpha_ce': 0.001, 'alpha_cost': 0.01, 'num_epoch': 1000, 'bs': 512, 'lr': 3e-05, 'hidden_dim_rate': 0.5, 'period': 10})
+=> saving checkpoint 'outputs/report_demo_train/save_models/checkpoint_000.pth.tar'
+=> saved checkpoint 'outputs/report_demo_train/save_models/checkpoint_000.pth.tar'
+Best val_prec1: 0.0000 at epoch 0
+********** Final prediction results **********
+Epoch: [1/625]	Time 0.031	Data 0.002	Loss 4.6109	Acc@1 0.0000	Acc@5 6.2500
+Epoch: [2/625]	Time 0.033	Data 0.002	Loss 4.6273	Acc@1 0.0000	Acc@5 0.0000
+Epoch: [3/625]	Time 0.031	Data 0.002	Loss 4.5994	Acc@1 0.0000	Acc@5 0.0000
+ * prec@1 2.083 prec@5 8.333
+ * prec@1 2.083 prec@5 8.333
+ * prec@1 0.000 prec@5 10.417
+ * prec@1 0.000 prec@5 2.083
