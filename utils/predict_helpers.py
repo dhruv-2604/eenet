@@ -20,13 +20,13 @@ class ScoreNormalizer(nn.Module):
         self.prob_out = nn.Sequential(nn.Linear(in_dim, mid_dim), nn.Sigmoid(), nn.Linear(mid_dim, 1), nn.Sigmoid())
 
     def forward(self, X):
-        q_hat = self.q_layer_1(X[:, :self.c]) * self.alpha_adj + self.q_layer_2(X[:, self.c:]).unsqueeze(-1)
+        q_hat = self.q_layer_1(X[:, :self.c]) * self.alpha_adj + self.q_layer_2(X[:, self.c:])
         r_ = self.prob_out(X)
         return q_hat, r_
 
     def predict(self, X):
-        q_hat = self.q_layer_1(X[:, :self.c]) * self.alpha_adj + self.q_layer_2(X[:, self.c:]).unsqueeze(-1)
-        return q_hat.squeeze(-1)  # FIX 1: squeeze extra dimension
+        q_hat = self.q_layer_1(X[:, :self.c]) * self.alpha_adj + self.q_layer_2(X[:, self.c:])
+        return q_hat
 
 
 class ExitAssigner(nn.Module):
@@ -59,11 +59,9 @@ class ExitAssigner(nn.Module):
         for k in range(self.num_exit):
             X = X_list[k].clone()
             if k > 0:
-                past_scores = torch.stack([score[k_].detach().flatten() for k_ in range(k)], dim=-1)
+                past_scores = torch.stack([score[k_].detach() for k_ in range(k)], dim=-1)
                 X = torch.concat([X, past_scores], dim=-1)
             q, prob_out = self.score_normalizers[k].forward(X)
-            q = q.reshape(q.shape[0], -1)
-            prob_out = prob_out.reshape(prob_out.shape[0], -1)
             score_.append(q[:, 0])
             q = torch.clamp(q, 0, 1)
             score.append(q[:, 0])
@@ -86,7 +84,7 @@ class ExitAssigner(nn.Module):
 
         bce_loss = torch.zeros(1).to(bce_weight.device)
         for k in range(self.num_exit):
-            bce_loss += nn.BCELoss(weight=bce_weight[:, k], reduction='sum')(torch.clamp(score[:, k].flatten(), 0, 1), acc_matrix[:, k].flatten())
+            bce_loss += nn.BCELoss(weight=bce_weight[:, k], reduction='sum')(score[:, k].flatten(), acc_matrix[:, k].flatten())
         bce_loss /= self.num_exit
 
         # ---------------------------------
@@ -204,6 +202,7 @@ def fit_exit_assigner(pred, target, costs, budget, alpha_ce, alpha_cost, beta_th
         loss_tuple_list = []
         for start_idx in np.arange(0, num_sample, batch_size):
             end_idx = start_idx + batch_size
+            optimizer.zero_grad()
             loss, _, _, loss_tuple, loss_ = m.compute_loss(pred[:, perm[start_idx: end_idx]], target[perm[start_idx: end_idx]],
                                                                [X[perm[start_idx: end_idx]] for X in X_list], opt_q_flag, opt_r_flag)
             loss.backward()

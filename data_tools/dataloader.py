@@ -1,4 +1,5 @@
 import os
+import ssl
 
 import pandas as pd
 import torch
@@ -14,8 +15,22 @@ except ImportError:
     pass
 
 
+def _configure_ssl_certificates():
+    try:
+        import certifi
+    except ImportError:
+        return
+
+    try:
+        ssl._create_default_https_context = lambda: ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        pass
+
+
 def get_dataloaders(args, batch_size):
+    _configure_ssl_certificates()
     train_set, val_set, test_set = None, None, None
+    pin_memory = torch.cuda.is_available()
 
     if args.data == 'cifar10':
         normalize = transforms.Normalize(mean=[0.4914, 0.4824, 0.4467],
@@ -183,29 +198,29 @@ def get_dataloaders(args, batch_size):
                 train_set, batch_size=batch_size,
                 sampler=torch.utils.data.sampler.SubsetRandomSampler(
                     train_indices),
-                num_workers=args.workers, pin_memory=True, collate_fn=cfn)
+                num_workers=args.workers, pin_memory=pin_memory, collate_fn=cfn)
         if 'val' in args.splits:
             val_loader = torch.utils.data.DataLoader(
                 val_set, batch_size=batch_size, shuffle=False,
                 sampler=torch.utils.data.sampler.SubsetRandomSampler(
                     val_indices),
-                num_workers=args.workers, pin_memory=True, collate_fn=cfn)
+                num_workers=args.workers, pin_memory=pin_memory, collate_fn=cfn)
         if 'test' in args.splits:
             test_loader = torch.utils.data.DataLoader(
                 test_set,
                 batch_size=batch_size, shuffle=False,
-                num_workers=args.workers, pin_memory=True, collate_fn=cfn)
+                num_workers=args.workers, pin_memory=pin_memory, collate_fn=cfn)
     else:
         if 'train' in args.splits:
             train_loader = torch.utils.data.DataLoader(
                 train_set,
                 batch_size=batch_size, shuffle=True,
-                num_workers=args.workers, pin_memory=True, collate_fn=cfn)
-        if 'val' in args.splits or 'test' in args.splits:
+                num_workers=args.workers, pin_memory=pin_memory, collate_fn=cfn)
+        if 'val' or 'test' in args.splits:
             val_loader = torch.utils.data.DataLoader(
                 test_set,
                 batch_size=batch_size, shuffle=False,
-                num_workers=args.workers, pin_memory=True, collate_fn=cfn)
+                num_workers=args.workers, pin_memory=pin_memory, collate_fn=cfn)
             test_loader = val_loader
 
     return train_loader, val_loader, test_loader
