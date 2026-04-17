@@ -27,6 +27,9 @@ def validate(model, val_loader, criterion, args):
     end = time.time()
     with torch.no_grad():
         for i, (input, target) in enumerate(val_loader):
+            if args.max_eval_batches is not None and i >= args.max_eval_batches:
+                break
+
             input = input.to(args.device)
             target = target.to(args.device)
 

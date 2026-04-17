@@ -26,6 +26,13 @@ def save_checkpoint(state, args, is_best, filename, result, prec1_per_exit, prec
     with open(result_filename, 'w') as f:
         print('\n'.join(result), file=f)
 
+    if not os.path.exists(exit_result_filename):
+        with open(exit_result_filename, 'w') as f:
+            header = ['epoch']
+            header.extend([f'exit{idx + 1}_top1' for idx in range(len(prec1_per_exit))])
+            header.extend([f'exit{idx + 1}_top5' for idx in range(len(prec5_per_exit))])
+            print('\t'.join(header), file=f)
+
     with open(exit_result_filename, 'a') as f:
         text = '\t'.join([str(state['epoch'])] + [f'{score.avg:.2f}' for score in prec1_per_exit + prec5_per_exit])
         print(text, file=f)

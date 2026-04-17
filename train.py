@@ -30,6 +30,9 @@ def train(model, train_loader, criterion, optimizer, epoch, args, train_params):
     avg_time = []
 
     for i, (input, target) in enumerate(train_loader):
+        if args.max_train_batches is not None and i >= args.max_train_batches:
+            break
+
         lr = adjust_learning_rate(optimizer, epoch, args, train_params, batch=i, nBatch=len(train_loader))
 
         if running_lr is None:

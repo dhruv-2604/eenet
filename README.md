@@ -22,6 +22,19 @@ python run_scheduling.py
 
 Trains exit scoring functions (gk) for each budget level and compares against entropy baseline.
 
+## PRISM Trust Experiments
+
+```bash
+python run_prism_experiments.py --use-segments
+```
+
+Runs the CIFAR-100 + DenseNet121 experiment suite for:
+- accuracy vs. exit depth
+- accuracy vs. compute budget
+- trust-based vs. random routing under injected faults
+
+The script writes CSV summaries and graphs into `outputs/prism_experiments/`.
+
 ## Partition Model
 
 ```bash
