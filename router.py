@@ -88,7 +88,7 @@ def flush_trust_buffers(trust_buffers: dict, tracker: EigenTrustTracker) -> None
         latency = np.array(buf["latency_ok"], dtype=np.float64)
         tracker.update(
             peer_id=peer_id,
-            accuracy=float(np.mean(np.array(correct) * np.array(scores))) if len(scores) > 0 else 0.5,
+            accuracy=float(np.mean(correct)),
             latency_ok=float(np.mean(latency)),
             score_calibration=compute_score_calibration(scores, correct),
             ema_momentum=0.30,

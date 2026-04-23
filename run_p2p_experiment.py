@@ -91,21 +91,24 @@ def main() -> None:
             print(f"  SCENARIO={scenario.upper()}  SEED={seed}")
             print(f"{'='*65}")
 
-            stop_network(args.pid_file)
-            time.sleep(1.0)
-
-            rc = launch_network(
-                scenario=scenario,
-                seed=seed,
-                pid_file=args.pid_file,
-                log_dir=args.log_dir,
-                wait_secs=args.wait_secs,
-            )
-            if rc != 0:
-                print(f"[orchestrator] launch_network failed (rc={rc}) — skipping")
-                continue
-
             for policy in POLICIES:
+                stop_network(args.pid_file)
+                time.sleep(1.0)
+
+                rc = launch_network(
+                    scenario=scenario,
+                    seed=seed,
+                    pid_file=args.pid_file,
+                    log_dir=args.log_dir,
+                    wait_secs=args.wait_secs,
+                )
+                if rc != 0:
+                    print(
+                        f"[orchestrator] launch_network failed for policy={policy} "
+                        f"(rc={rc}) — skipping"
+                    )
+                    continue
+
                 out_json = os.path.join(
                     args.results_dir,
                     f"{scenario}_{policy}_seed{seed}.json",
@@ -121,6 +124,9 @@ def main() -> None:
                 if os.path.exists(out_json):
                     with open(out_json) as fh:
                         per_seed_results[(scenario, policy)].append(json.load(fh))
+
+                stop_network(args.pid_file)
+                time.sleep(1.0)
 
             stop_network(args.pid_file)
             time.sleep(2.0)
