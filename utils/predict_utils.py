@@ -145,7 +145,8 @@ def test_exit_assigner(args, pred, n_stage, ea):
                 X = torch.concat([X.cpu(), nn_array[:k].permute(1, 0)], dim=-1)
             if args.use_gpu:
                 X = X.cuda()
-            nn_array[k] = ea.score_normalizers[k].predict(X)[:, 0].cpu()
+            raw = ea.score_normalizers[k].predict(X)
+            nn_array[k] = (raw[:, 0] if raw.dim() > 1 else raw).cpu()
 
     return nn_array
 

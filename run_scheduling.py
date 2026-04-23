@@ -16,6 +16,9 @@ import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import utils.predict_helpers as _ph
+sys.modules['predict_helpers'] = _ph  # fix pickle compat with Colab-saved .pkl files
+
 import models
 from config import Config
 from args import arg_parser, modify_args
@@ -160,8 +163,17 @@ for budget in BUDGETS:
     ea, probs = None, None
     for candidate in [ea_path, ea_path.replace('_.pkl', '.pkl')]:
         if os.path.exists(candidate):
-            ea    = pkl.load(open(candidate, 'rb'))
-            pfn   = os.path.join(SAVE_PATH, f'ea_pkls/probs_{budget}_.pkl')  # FIX 1: construct path directly
+            ea = pkl.load(open(candidate, 'rb'))
+            # build probs path by replacing only the filename, not the directory
+            ea_dir, ea_fname = os.path.split(candidate)
+            probs_fname = ea_fname.replace('ea_', 'probs_', 1)
+            pfn = os.path.join(ea_dir, probs_fname)
+            if not os.path.exists(pfn):
+                # try toggling trailing underscore
+                if pfn.endswith('_.pkl'):
+                    pfn = pfn[:-5] + '.pkl'
+                else:
+                    pfn = pfn[:-4] + '_.pkl'
             probs = pkl.load(open(pfn, 'rb'))
             print(f"\n[Budget {budget}ms] Loaded cached scheduler from {candidate}")
             break
