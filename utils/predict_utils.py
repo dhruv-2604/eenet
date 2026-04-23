@@ -138,13 +138,14 @@ def dynamic_evaluate(model, test_loader, val_loader, args):
 
 def test_exit_assigner(args, pred, n_stage, ea):
     nn_array = torch.zeros((n_stage, pred.shape[1]))
+    score_device = next(ea.score_normalizers.parameters()).device
     for k in range(n_stage):
         with torch.no_grad():
             X, _ = prepare_input(pred[:k + 1], k=k)
             if k > 0:
                 X = torch.concat([X.cpu(), nn_array[:k].permute(1, 0)], dim=-1)
             if args.use_gpu:
-                X = X.cuda()
+                X = X.to(score_device)
             raw = ea.score_normalizers[k].predict(X)
             nn_array[k] = (raw[:, 0] if raw.dim() > 1 else raw).cpu()
 
@@ -213,10 +214,13 @@ class Tester(object):
     def __init__(self, model, args=None):
         self.args = args
         self.model = model
-        if args is None or args.use_gpu:
-            self.softmax = nn.Softmax(dim=1).cuda()
+        if args is not None and hasattr(args, 'device'):
+            self.device = args.device
+        elif args is None or args.use_gpu:
+            self.device = torch.device('cuda')
         else:
-            self.softmax = nn.Softmax(dim=1)
+            self.device = torch.device('cpu')
+        self.softmax = nn.Softmax(dim=1).to(self.device)
 
     def calc_logit(self, dataloader):
         self.model.eval()
@@ -227,9 +231,9 @@ class Tester(object):
 
         torch.manual_seed(0)
         for i, (input, target) in enumerate(dataloader):
-            targets.append(target)
+            targets.append(target.cpu())
             with torch.no_grad():
-                input_var = torch.autograd.Variable(input)
+                input_var = torch.autograd.Variable(input.to(self.device))
                 st = time.time()
                 output, _ = self.model(input_var, manual_early_exit_index=0)
                 et = time.time()
@@ -237,14 +241,16 @@ class Tester(object):
                 if not isinstance(output, list):
                     output = [output]
                 for b in range(n_stage):
-                    _t = self.softmax(output[b])
+                    _t = self.softmax(output[b]).cpu()
 
                     logits[b].append(_t)
 
             if i % self.args.print_freq == 0:
                 print('Generate Logit: [{0}/{1}]'.format(i, len(dataloader)))
 
-        avg_time = sum(avg_time[10:]) / (len(avg_time) - 10)
+        warmup = min(10, max(len(avg_time) - 1, 0))
+        timed = avg_time[warmup:] if warmup < len(avg_time) else avg_time
+        avg_time = sum(timed) / len(timed) if timed else 0.0
         print(avg_time)
 
         for b in range(n_stage):

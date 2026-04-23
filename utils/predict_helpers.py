@@ -6,6 +6,9 @@ import torch.nn as nn
 import torch.optim as opt
 
 
+EPS = 1e-8
+
+
 class ScoreNormalizer(nn.Module):
     def __init__(self, in_dim, c, ratio, alpha_adj=1):
         super(ScoreNormalizer, self).__init__()
@@ -20,13 +23,13 @@ class ScoreNormalizer(nn.Module):
         self.prob_out = nn.Sequential(nn.Linear(in_dim, mid_dim), nn.Sigmoid(), nn.Linear(mid_dim, 1), nn.Sigmoid())
 
     def forward(self, X):
-        q_hat = self.q_layer_1(X[:, :self.c]) * self.alpha_adj + self.q_layer_2(X[:, self.c:]).unsqueeze(-1)
+        q_hat = self.q_layer_1(X[:, :self.c]) * self.alpha_adj + self.q_layer_2(X[:, self.c:])
         r_ = self.prob_out(X)
         return q_hat, r_
 
     def predict(self, X):
-        q_hat = self.q_layer_1(X[:, :self.c]) * self.alpha_adj + self.q_layer_2(X[:, self.c:]).unsqueeze(-1)
-        return q_hat.squeeze(-1)  # FIX 1: squeeze extra dimension
+        q_hat = self.q_layer_1(X[:, :self.c]) * self.alpha_adj + self.q_layer_2(X[:, self.c:])
+        return q_hat
 
 
 class ExitAssigner(nn.Module):
@@ -59,39 +62,47 @@ class ExitAssigner(nn.Module):
         for k in range(self.num_exit):
             X = X_list[k].clone()
             if k > 0:
-                past_scores = torch.stack([score[k_].detach().flatten() for k_ in range(k)], dim=-1)  # FIX 2: flatten before stack
+                past_scores = torch.stack([score[k_].detach() for k_ in range(k)], dim=-1)
                 X = torch.concat([X, past_scores], dim=-1)
             q, prob_out = self.score_normalizers[k].forward(X)
-            q = q.reshape(q.shape[0], -1)          # FIX 3: reshape q
-            prob_out = prob_out.reshape(prob_out.shape[0], -1)  # FIX 3: reshape prob_out
             score_.append(q[:, 0])
+            q = torch.nan_to_num(q, nan=0.5, posinf=1.0, neginf=0.0)
+            prob_out = torch.nan_to_num(prob_out, nan=1.0 / self.num_exit, posinf=1.0, neginf=0.0)
             q = torch.clamp(q, 0, 1)
+            prob_out = torch.clamp(prob_out, EPS, 1.0)
             score.append(q[:, 0])
             prob_score.append(prob_out[:, 0])
         score = torch.stack(score, dim=-1)  # NK
         score_ = torch.stack(score_, dim=-1)  # NK
         prob_score = torch.stack(prob_score, dim=-1)  # NK
         probs = torch.softmax(prob_score, dim=-1)
+        probs = torch.nan_to_num(probs, nan=1.0 / self.num_exit, posinf=1.0 / self.num_exit, neginf=EPS)
+        probs = probs / probs.sum(dim=-1, keepdim=True).clamp_min(EPS)
 
         # ---------------------------------
 
         acc_matrix = (argmax_preds == targets).float().permute(1, 0)
 
         prob_acc_matrix = score.clone().detach() ** self.beta_ce
-        prob_acc_matrix = prob_acc_matrix / prob_acc_matrix.sum(dim=-1).unsqueeze(-1)
+        prob_acc_matrix = torch.nan_to_num(prob_acc_matrix, nan=0.0, posinf=1.0, neginf=0.0)
+        prob_acc_matrix = prob_acc_matrix / prob_acc_matrix.sum(dim=-1, keepdim=True).clamp_min(EPS)
         # ---------------------------------
 
         weight = probs.clone().detach()
-        bce_weight = weight / weight.sum(dim=0)
+        bce_weight = weight / weight.sum(dim=0, keepdim=True).clamp_min(EPS)
+        bce_weight = torch.nan_to_num(bce_weight, nan=1.0 / bce_weight.shape[0], posinf=1.0, neginf=0.0)
 
         bce_loss = torch.zeros(1).to(bce_weight.device)
         for k in range(self.num_exit):
-            bce_loss += nn.BCELoss(weight=bce_weight[:, k], reduction='sum')(torch.clamp(score[:, k].flatten(), 0, 1), acc_matrix[:, k].flatten())  # FIX 4: clamp at BCE call
+            score_k = torch.nan_to_num(score[:, k].flatten(), nan=0.5, posinf=1.0, neginf=0.0).clamp(EPS, 1.0 - EPS)
+            target_k = acc_matrix[:, k].flatten()
+            weight_k = torch.nan_to_num(bce_weight[:, k], nan=1.0, posinf=1.0, neginf=0.0)
+            bce_loss += nn.BCELoss(weight=weight_k, reduction='sum')(score_k, target_k)
         bce_loss /= self.num_exit
 
         # ---------------------------------
 
-        kl_loss = nn.KLDivLoss()(torch.log(probs), prob_acc_matrix)
+        kl_loss = nn.KLDivLoss()(torch.log(probs.clamp_min(EPS)), prob_acc_matrix)
 
         # ---------------------------------
 
@@ -110,7 +121,7 @@ class ExitAssigner(nn.Module):
                     conf_scores = torch.zeros_like(score)
                     for exit_idx in range(self.num_exit):
                         pred = logits[exit_idx]
-                        pred_log = torch.log(pred)
+                        pred_log = torch.log(pred.clamp_min(EPS))
                         conf = 1 + torch.sum(pred * pred_log, dim=1) / math.log(pred.shape[1])
                         conf_scores[exit_idx] = conf
                     score_ = conf_scores
@@ -204,6 +215,7 @@ def fit_exit_assigner(pred, target, costs, budget, alpha_ce, alpha_cost, beta_th
         loss_tuple_list = []
         for start_idx in np.arange(0, num_sample, batch_size):
             end_idx = start_idx + batch_size
+            optimizer.zero_grad()
             loss, _, _, loss_tuple, loss_ = m.compute_loss(pred[:, perm[start_idx: end_idx]], target[perm[start_idx: end_idx]],
                                                                [X[perm[start_idx: end_idx]] for X in X_list], opt_q_flag, opt_r_flag)
             loss.backward()
@@ -252,7 +264,7 @@ def prepare_input(inp, k, inp_flag=True, max=1, entropy=True, vote=False, norm=F
         X_list.append(torch.sort(X, 1)[0][:, -max:])
 
     if entropy:
-        pred_log = torch.log(X)
+        pred_log = torch.log(X.clamp_min(EPS))
         conf = 1 + torch.sum(X * pred_log, dim=1) / math.log(X.shape[1])
         X_list.append(conf.unsqueeze(1))
 
@@ -270,6 +282,8 @@ def prepare_input(inp, k, inp_flag=True, max=1, entropy=True, vote=False, norm=F
     if norm:
         X_mean = X.mean(dim=0)
         X_std = X.std(dim=0)
-        X = (X - X_mean) / X_std
+        X = (X - X_mean) / X_std.clamp_min(EPS)
+
+    X = torch.nan_to_num(X, nan=0.0, posinf=1.0, neginf=-1.0)
 
     return X, (X_mean, X_std)

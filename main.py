@@ -49,6 +49,9 @@ def main():
     print(f'Using device: {args.device}')
 
     config = Config()
+    train_params = dict(config.training_params[args.data][args.arch])
+    if args.num_epochs is not None:
+        train_params['num_epoch'] = args.num_epochs
 
     measure_flops(args, {**config.model_params[args.data][args.arch]})
     model = getattr(models, args.arch)(args, {**config.model_params[args.data][args.arch]})
@@ -63,9 +66,9 @@ def main():
 
     optimizer = torch.optim.SGD([{'params': base_params},
                                  {'params': exit_params}],
-                                lr=config.training_params[args.data][args.arch]['lr'],
-                                momentum=config.training_params[args.data][args.arch]['momentum'],
-                                weight_decay=config.training_params[args.data][args.arch]['weight_decay'])
+                                lr=train_params['lr'],
+                                momentum=train_params['momentum'],
+                                weight_decay=train_params['weight_decay'])
 
     if args.resume:
         checkpoint = load_checkpoint(args)
@@ -75,7 +78,7 @@ def main():
             model.load_state_dict(checkpoint['state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer'])
 
-    batch_size = args.batch_size if args.batch_size else config.training_params[args.data][args.arch]['batch_size']
+    batch_size = args.batch_size if args.batch_size else train_params['batch_size']
     train_loader, val_loader, test_loader = get_dataloaders(args, batch_size)
 
     if args.evalmode is not None:
@@ -88,10 +91,10 @@ def main():
 
     scores = ['epoch\tlr\ttrain_loss\tval_loss\ttrain_prec1\tval_prec1\ttrain_prec5\tval_prec5']
 
-    for epoch in range(args.start_epoch, config.training_params[args.data][args.arch]['num_epoch']):
+    for epoch in range(args.start_epoch, train_params['num_epoch']):
 
         train_loss, train_prec1, train_prec5, lr, _, _ = \
-            train(model, train_loader, criterion, optimizer, epoch, args, config.training_params[args.data][args.arch])
+            train(model, train_loader, criterion, optimizer, epoch, args, train_params)
 
         val_loss, val_prec1, val_prec5, val_prec1_per_exit, val_prec5_per_exit = validate(model, val_loader, criterion,
                                                                                           args)

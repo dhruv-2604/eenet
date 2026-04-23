@@ -1,5 +1,4 @@
 import argparse
-import datetime
 import os
 
 
@@ -26,7 +25,7 @@ def modify_args(args):
         args.num_classes = 4
 
     if not hasattr(args, "save_path") or args.save_path is None:
-        args.save_path = f"outputs/{args.arch}_{args.evalmode}_{args.data}_{format(str(datetime.datetime.now()))}"
+        args.save_path = f"outputs/{args.arch}_{args.evalmode}_{args.data}"
 
     if args.data.startswith('cifar'):
         args.image_size = (32, 32)
@@ -41,7 +40,15 @@ def modify_args(args):
     return args
 
 
-model_names = ['msdnet35_5', 'resnet56_3', 'densenet121_4', 'bert_4']
+model_names = [
+    'msdnet35_5',
+    'resnet56_1',
+    'resnet56_3',
+    'densenet121_1',
+    'densenet121_4',
+    'bert_1',
+    'bert_4',
+]
 
 arg_parser = argparse.ArgumentParser(
     description='Image classification PK main script')
@@ -89,7 +96,14 @@ optim_group = arg_parser.add_argument_group('optimization',
                                             'optimization setting')
 optim_group.add_argument('--start-epoch', default=0, type=int, metavar='N',
                          help='manual epoch number (useful on restarts)')
-optim_group.add_argument('-b', '--batch-size', default=1, type=int, help='mini-batch size')
+optim_group.add_argument('-b', '--batch-size', default=0, type=int,
+                         help='mini-batch size (0 uses the config default)')
+optim_group.add_argument('--num-epochs', default=None, type=int,
+                         help='override the config epoch count for quick tests or shorter runs')
+optim_group.add_argument('--max-train-batches', default=None, type=int,
+                         help='cap the number of train batches per epoch for smoke tests')
+optim_group.add_argument('--max-eval-batches', default=None, type=int,
+                         help='cap the number of validation/test batches for smoke tests')
 
 # inference related
 optim_group = arg_parser.add_argument_group('inference', 'inference setting')
