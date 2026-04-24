@@ -140,7 +140,7 @@ def simulate_routing_policy(
     trust_scale: float = 0.20,
     trust_alpha: float = 0.1,
     trust_decay: float = 0.85,
-    max_attempts_per_stage: int = 2,
+    max_attempts_per_stage: int = 1,
 ) -> Dict[str, object]:
     if policy not in ("random", "trust"):
         raise ValueError("Unknown routing policy: {0}".format(policy))
@@ -191,8 +191,11 @@ def simulate_routing_policy(
             base_probs = np.asarray(test_pred[stage_idx, sample_idx], dtype=np.float64)
             base_score = float(test_scores[stage_idx, sample_idx])
 
+            # Trust routing uses ranked fallback across all replicas. Random routing
+            # gets only blind attempts, so a dropped peer can drop the request.
+            attempt_limit = len(stage_peers) if policy == "trust" else max_attempts_per_stage
             for attempt_idx, peer in enumerate(stage_peers):
-                if attempt_idx >= max_attempts_per_stage:
+                if attempt_idx >= attempt_limit:
                     break
                 latency = seconds[stage_idx] * peer.latency_multiplier
                 if rng.random() < peer.spike_prob:
