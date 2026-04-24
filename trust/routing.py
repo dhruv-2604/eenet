@@ -140,7 +140,7 @@ def simulate_routing_policy(
     trust_scale: float = 0.20,
     trust_alpha: float = 0.1,
     trust_decay: float = 0.85,
-    max_attempts_per_stage: int = 2,
+    max_attempts_per_stage: int = 1,
 ) -> Dict[str, object]:
     if policy not in ("random", "trust"):
         raise ValueError("Unknown routing policy: {0}".format(policy))
@@ -167,6 +167,7 @@ def simulate_routing_policy(
     }
 
     completed = 0
+    reliable_completed = 0
     correct_total = 0
     dropped_requests = 0
     total_latency = 0.0
@@ -175,6 +176,7 @@ def simulate_routing_policy(
 
     for sample_idx in range(num_samples):
         sample_done = False
+        sample_reliable = True
         sample_latency = 0.0
 
         for stage_idx in range(num_stages):
@@ -189,8 +191,11 @@ def simulate_routing_policy(
             base_probs = np.asarray(test_pred[stage_idx, sample_idx], dtype=np.float64)
             base_score = float(test_scores[stage_idx, sample_idx])
 
+            # Trust routing uses ranked fallback across all replicas. Random routing
+            # gets only blind attempts, so a dropped peer can drop the request.
+            attempt_limit = len(stage_peers) if policy == "trust" else max_attempts_per_stage
             for attempt_idx, peer in enumerate(stage_peers):
-                if attempt_idx >= max_attempts_per_stage:
+                if attempt_idx >= attempt_limit:
                     break
                 latency = seconds[stage_idx] * peer.latency_multiplier
                 if rng.random() < peer.spike_prob:
@@ -198,6 +203,7 @@ def simulate_routing_policy(
                 sample_latency += latency
 
                 if rng.random() < peer.drop_prob:
+                    sample_reliable = False
                     peer_buffers[peer.peer_id]["scores"].append(base_score)
                     peer_buffers[peer.peer_id]["correct"].append(0)
                     peer_buffers[peer.peer_id]["latency_ok"].append(0)
@@ -211,9 +217,13 @@ def simulate_routing_policy(
                 if peer.corrupt_prob > 0 and not is_correct:
                     peer_score = min(base_score + 0.25, 1.0)
 
+                latency_ok = int(latency <= seconds[stage_idx] * 1.25)
+                if not latency_ok:
+                    sample_reliable = False
+
                 peer_buffers[peer.peer_id]["scores"].append(peer_score)
                 peer_buffers[peer.peer_id]["correct"].append(is_correct)
-                peer_buffers[peer.peer_id]["latency_ok"].append(int(latency <= seconds[stage_idx] * 1.25))
+                peer_buffers[peer.peer_id]["latency_ok"].append(latency_ok)
 
                 threshold = base_thresholds[stage_idx]
                 if policy == "trust":
@@ -227,6 +237,8 @@ def simulate_routing_policy(
                 should_exit = stage_idx == num_stages - 1 or peer_score >= threshold
                 if should_exit:
                     completed += 1
+                    if sample_reliable:
+                        reliable_completed += 1
                     correct_total += is_correct
                     total_latency += sample_latency
                     exit_counts[stage_idx] += 1
@@ -294,7 +306,7 @@ def simulate_routing_policy(
         "seed": seed,
         "accuracy": 100.0 * correct_total / total_requests,
         "accuracy_on_completed": 100.0 * correct_total / max(completed, 1),
-        "reliability": 100.0 * completed / total_requests,
+        "reliability": 100.0 * reliable_completed / total_requests,
         "dropped_responses": 100.0 * dropped_requests / total_requests,
         "avg_latency_ms": total_latency / total_requests,
         "exit_distribution": (exit_counts / max(num_samples, 1)).tolist(),
