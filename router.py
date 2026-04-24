@@ -33,19 +33,19 @@ NUM_STAGES = 4
 
 _PEERS_BY_STAGE = peers_by_stage()
 _ROOT = os.path.dirname(os.path.abspath(__file__))
-_EA_PKL = os.path.join(_ROOT, "outputs", "densenet121_4_None_cifar100", "ea_pkls", "ea_6.5.pkl")
-_FALLBACK_THRESHOLDS = [0.5, 0.5, 0.5, float("-inf")]
+_DEFAULT_EA_PKL = os.path.join(_ROOT, "outputs", "densenet121_4_None_cifar100", "ea_pkls", "ea_6.5.pkl")
 
 
 def _load_exit_thresholds(pkl_path: str) -> list:
-    try:
-        sys.path.insert(0, os.path.join(_ROOT, "utils"))
-        with open(pkl_path, "rb") as fh:
-            ea = pickle.load(fh)
-        return ea.get_threshold().detach().cpu().numpy().tolist()
-    except Exception as exc:
-        print(f"[router] WARNING: could not load thresholds from {pkl_path}: {exc}")
-        return _FALLBACK_THRESHOLDS
+    sys.path.insert(0, os.path.join(_ROOT, "utils"))
+    with open(pkl_path, "rb") as fh:
+        ea = pickle.load(fh)
+    thresholds = ea.get_threshold().detach().cpu().numpy().tolist()
+    if len(thresholds) != NUM_STAGES:
+        raise ValueError(
+            f"Expected {NUM_STAGES} exit thresholds from {pkl_path}, got {len(thresholds)}"
+        )
+    return thresholds
 
 
 # ── ZMQ helpers ───────────────────────────────────────────────────────────────
@@ -199,7 +199,14 @@ def route_inference(
             peer_trust = float(tracker.trust[elected])
             avg_trust = float(np.mean([tracker.trust[p] for p in _PEERS_BY_STAGE[stage_idx]]))
             trust_ratio = peer_trust / (avg_trust + 1e-9)
-            adjusted_threshold = base_thresholds[stage_idx] * (1.0 + trust_exit_adjustment * (1.0 - trust_ratio))
+            threshold_scale = 1.0 + trust_exit_adjustment * (1.0 - trust_ratio)
+            threshold_scale = float(np.clip(
+                threshold_scale,
+                1.0 - trust_exit_adjustment,
+                1.0 + trust_exit_adjustment,
+            ))
+            base_threshold = float(base_thresholds[stage_idx])
+            adjusted_threshold = float(np.clip(base_threshold * threshold_scale, 0.0, 1.0))
             score_val = float(response["score"].item()) if response.get("score") is not None else 0.5
             router_should_exit = score_val >= adjusted_threshold
             if router_should_exit != peer_should_exit:
@@ -237,12 +244,16 @@ def main() -> dict:
                         help="Trust-adjustment factor for exit thresholds (0.0=off, 0.2=recommended, 0.5=aggressive)")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--output-json", type=str, default=None)
+    parser.add_argument("--ea-pkl", type=str, default=_DEFAULT_EA_PKL,
+                        help="ExitAssigner pickle used for trust-adjusted exit thresholds")
     parser.add_argument(
         "--seconds-csv",
         type=str,
         default="outputs/densenet121_4_None_cifar100/seconds.csv",
     )
     args = parser.parse_args()
+    if not 0.0 <= args.trust_exit_adjustment <= 0.5:
+        parser.error("--trust-exit-adjustment must be between 0.0 and 0.5")
 
     seconds: list[float] = []
     with open(args.seconds_csv) as fh:
@@ -252,8 +263,12 @@ def main() -> dict:
                 seconds.append(float(line))
     print(f"[router] stage latencies (ms): {seconds}")
 
-    base_thresholds = _load_exit_thresholds(_EA_PKL)
-    print(f"[router] exit thresholds: {[f'{t:.4f}' for t in base_thresholds]}")
+    trust_adjustment_enabled = args.trust_exit_adjustment > 0.0 and args.policy == "trust"
+    if trust_adjustment_enabled:
+        base_thresholds = _load_exit_thresholds(args.ea_pkl)
+        print(f"[router] exit thresholds: {[f'{t:.4f}' for t in base_thresholds]}")
+    else:
+        base_thresholds = [0.0] * NUM_STAGES
 
     transform = T.Compose([T.ToTensor(), T.Normalize(CIFAR100_MEAN, CIFAR100_STD)])
     test_dataset = torchvision.datasets.CIFAR100(
