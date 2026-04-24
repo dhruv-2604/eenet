@@ -1,0 +1,9 @@
+system,scenario,policy,sample_count,accuracy_pct,reliability_pct,dropped_pct,avg_latency_ms,latency_scope,source,comparison_note
+Centralized full model,clean,single process,10000,75.74999928474426,100.0,0.0,0.748038,model-only local,exit_metrics.csv final exit,Full CIFAR-100 test set; model-only timing.
+Centralized EENet early exit,clean,EENet budget 6.50 ms,10000,55.73,100.0,0.0,0.5304283761999132,model-only local,budget_sweep.csv,Full CIFAR-100 test set; model-only timing.
+Distributed 16-node segments,easy,random,1000,59.0,100.0,0.0,16.931986421812326,wall-clock routed,outputs/16-node-p2p/aggregated_results.json,P2P routed run; wall-clock includes process/ZMQ overhead.
+Distributed 16-node segments,easy,trust,1000,59.0,100.0,0.0,16.726461900863796,wall-clock routed,outputs/16-node-p2p/aggregated_results.json,P2P routed run; wall-clock includes process/ZMQ overhead.
+Distributed 16-node segments,medium,random,1000,53.4,95.0,5.0,21.57972564129159,wall-clock routed,outputs/16-node-p2p/aggregated_results.json,P2P routed run; wall-clock includes process/ZMQ overhead.
+Distributed 16-node segments,medium,trust,1000,59.0,100.0,0.0,16.765564801869914,wall-clock routed,outputs/16-node-p2p/aggregated_results.json,P2P routed run; wall-clock includes process/ZMQ overhead.
+Distributed 16-node segments,hard,random,1000,45.8,89.0,11.0,30.945819047046825,wall-clock routed,outputs/16-node-p2p/aggregated_results.json,P2P routed run; wall-clock includes process/ZMQ overhead.
+Distributed 16-node segments,hard,trust,1000,58.4,99.3,0.7,21.654638783540577,wall-clock routed,outputs/16-node-p2p/aggregated_results.json,P2P routed run; wall-clock includes process/ZMQ overhead.

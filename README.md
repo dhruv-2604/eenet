@@ -35,6 +35,16 @@ Runs the CIFAR-100 + DenseNet121 experiment suite for:
 
 The script writes CSV summaries and graphs into `outputs/prism_experiments/`.
 
+## Report Assets
+
+```bash
+python analysis/generate_report_assets.py
+```
+
+Builds a centralized-vs-distributed comparison table and trust-over-time plots
+from the checked-in experiment outputs. The generated files are written to
+`outputs/report_assets/`.
+
 ## Partition Model
 
 ```bash
