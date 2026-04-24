@@ -46,15 +46,19 @@ def stop_network(pid_file: str) -> None:
         _run([PYTHON, os.path.join(ROOT, "stop_network.py"), "--pid-file", pid_file])
 
 
-def run_router(policy: str, scenario: str, n_samples: int, output_json: str, seed: int) -> int:
-    return _run([
+def run_router(policy: str, scenario: str, n_samples: int, output_json: str, seed: int,
+               trust_exit_adjustment: float = 0.0) -> int:
+    cmd = [
         PYTHON, os.path.join(ROOT, "router.py"),
         "--policy", policy,
         "--scenario", scenario,
         "--n-samples", str(n_samples),
         "--output-json", output_json,
         "--seed", str(seed),
-    ])
+    ]
+    if trust_exit_adjustment != 0.0:
+        cmd += ["--trust-exit-adjustment", str(trust_exit_adjustment)]
+    return _run(cmd)
 
 
 def _mean_std(values: list) -> tuple:
@@ -79,6 +83,8 @@ def main() -> None:
     parser.add_argument("--log-dir", default="p2p_logs")
     parser.add_argument("--wait-secs", type=float, default=18.0,
                         help="Seconds to wait for peers to start (MPS warmup needs ~15s)")
+    parser.add_argument("--trust-exit-adjustment", type=float, default=0.0,
+                        help="Trust-adjustment factor for exit thresholds (0.0=off, 0.2=recommended)")
     args = parser.parse_args()
 
     seed_list = [int(s.strip()) for s in args.seeds.split(",")]
@@ -120,6 +126,7 @@ def main() -> None:
                     n_samples=args.n_samples,
                     output_json=out_json,
                     seed=seed,
+                    trust_exit_adjustment=args.trust_exit_adjustment,
                 )
                 if os.path.exists(out_json):
                     with open(out_json) as fh:
@@ -184,6 +191,18 @@ def main() -> None:
             f"{scenario.capitalize():<10} | {rand_str:<{col_w}} | "
             f"{trust_str:<{col_w}} | {gain:+.1f}%"
         )
+
+    if args.trust_exit_adjustment > 0.0:
+        print(f"\n{'='*72}")
+        print(f"  Trust exit overrides (adjustment={args.trust_exit_adjustment})")
+        print(f"{'='*72}")
+        print(f"{'Scenario':<10} | {'Policy':<8} | {'Total overrides':>16} | {'Per-seed':>10}")
+        print("-" * 55)
+        for entry in aggregated:
+            overrides = [r.get("trust_override_count", 0) for r in entry["per_seed"]]
+            total = sum(overrides)
+            per_seed_str = ", ".join(str(v) for v in overrides)
+            print(f"{entry['scenario'].capitalize():<10} | {entry['policy']:<8} | {total:>16} | {per_seed_str}")
 
     print(f"\n[orchestrator] all results → {args.results_dir}/")
 

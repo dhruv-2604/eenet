@@ -32,6 +32,20 @@ CIFAR100_STD = [0.2675, 0.2565, 0.2761]
 NUM_STAGES = 4
 
 _PEERS_BY_STAGE = peers_by_stage()
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+_DEFAULT_EA_PKL = os.path.join(_ROOT, "outputs", "densenet121_4_None_cifar100", "ea_pkls", "ea_6.5.pkl")
+
+
+def _load_exit_thresholds(pkl_path: str) -> list:
+    sys.path.insert(0, os.path.join(_ROOT, "utils"))
+    with open(pkl_path, "rb") as fh:
+        ea = pickle.load(fh)
+    thresholds = ea.get_threshold().detach().cpu().numpy().tolist()
+    if len(thresholds) != NUM_STAGES:
+        raise ValueError(
+            f"Expected {NUM_STAGES} exit thresholds from {pkl_path}, got {len(thresholds)}"
+        )
+    return thresholds
 
 
 # ── ZMQ helpers ───────────────────────────────────────────────────────────────
@@ -111,17 +125,21 @@ def route_inference(
     trust_buffers: dict,
     timeout_ms: int,
     max_fallbacks: int,
+    base_thresholds: list,
+    trust_exit_adjustment: float,
 ):
     """
     Route one image through the 4-stage pipeline.
 
-    Returns (pred, elected_chain) where pred is the int class prediction
-    (or None if the inference was fully dropped) and elected_chain is the
-    list of peer_ids that actually served each stage.
+    Returns (pred, elected_chain, n_overrides) where pred is the int class
+    prediction (or None if dropped), elected_chain is the list of peer_ids
+    that served each stage, and n_overrides counts how many times the router's
+    trust-adjusted exit decision differed from the peer's own should_exit.
     """
     feat = image_tensor
-    past_scores = None 
+    past_scores = None
     elected_chain = []
+    n_overrides = 0
 
     for stage_idx in range(NUM_STAGES):
         base_latency_ms = seconds[stage_idx]
@@ -169,11 +187,35 @@ def route_inference(
             break
 
         if response is None:
-            return None, elected_chain
+            return None, elected_chain, n_overrides
 
         elected_chain.append(elected)
-        if response.get("should_exit") or stage_idx == NUM_STAGES - 1:
-            return int(response["logit"].argmax().item()), elected_chain
+
+        if stage_idx == NUM_STAGES - 1:
+            return int(response["logit"].argmax().item()), elected_chain, n_overrides
+
+        peer_should_exit = bool(response.get("should_exit", False))
+        if trust_exit_adjustment > 0.0 and policy == "trust":
+            peer_trust = float(tracker.trust[elected])
+            avg_trust = float(np.mean([tracker.trust[p] for p in _PEERS_BY_STAGE[stage_idx]]))
+            trust_ratio = peer_trust / (avg_trust + 1e-9)
+            threshold_scale = 1.0 + trust_exit_adjustment * (1.0 - trust_ratio)
+            threshold_scale = float(np.clip(
+                threshold_scale,
+                1.0 - trust_exit_adjustment,
+                1.0 + trust_exit_adjustment,
+            ))
+            base_threshold = float(base_thresholds[stage_idx])
+            adjusted_threshold = float(np.clip(base_threshold * threshold_scale, 0.0, 1.0))
+            score_val = float(response["score"].item()) if response.get("score") is not None else 0.5
+            router_should_exit = score_val >= adjusted_threshold
+            if router_should_exit != peer_should_exit:
+                n_overrides += 1
+            if router_should_exit:
+                return int(response["logit"].argmax().item()), elected_chain, n_overrides
+        elif peer_should_exit:
+            return int(response["logit"].argmax().item()), elected_chain, n_overrides
+
         feat = response["feat"]
         new_score = response.get("score")      
         if new_score is not None:
@@ -184,7 +226,8 @@ def route_inference(
                     [past_scores, new_score.unsqueeze(1)], dim=1
                 )
 
-    return None, elected_chain
+    return None, elected_chain, n_overrides
+
 
 def main() -> dict:
     parser = argparse.ArgumentParser(description="PRISM P2P router")
@@ -197,14 +240,20 @@ def main() -> dict:
                         help="Flush trust buffers every N samples")
     parser.add_argument("--max-fallbacks", type=int, default=1,
                         help="Max peers to try per stage before dropping")
+    parser.add_argument("--trust-exit-adjustment", type=float, default=0.0,
+                        help="Trust-adjustment factor for exit thresholds (0.0=off, 0.2=recommended, 0.5=aggressive)")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--output-json", type=str, default=None)
+    parser.add_argument("--ea-pkl", type=str, default=_DEFAULT_EA_PKL,
+                        help="ExitAssigner pickle used for trust-adjusted exit thresholds")
     parser.add_argument(
         "--seconds-csv",
         type=str,
         default="outputs/densenet121_4_None_cifar100/seconds.csv",
     )
     args = parser.parse_args()
+    if not 0.0 <= args.trust_exit_adjustment <= 0.5:
+        parser.error("--trust-exit-adjustment must be between 0.0 and 0.5")
 
     seconds: list[float] = []
     with open(args.seconds_csv) as fh:
@@ -213,6 +262,13 @@ def main() -> dict:
             if line:
                 seconds.append(float(line))
     print(f"[router] stage latencies (ms): {seconds}")
+
+    trust_adjustment_enabled = args.trust_exit_adjustment > 0.0 and args.policy == "trust"
+    if trust_adjustment_enabled:
+        base_thresholds = _load_exit_thresholds(args.ea_pkl)
+        print(f"[router] exit thresholds: {[f'{t:.4f}' for t in base_thresholds]}")
+    else:
+        base_thresholds = [0.0] * NUM_STAGES
 
     transform = T.Compose([T.ToTensor(), T.Normalize(CIFAR100_MEAN, CIFAR100_STD)])
     test_dataset = torchvision.datasets.CIFAR100(
@@ -242,6 +298,7 @@ def main() -> dict:
     completed = 0
     total_latency_ms = 0.0
     exit_counts = [0] * NUM_STAGES
+    trust_override_total = 0
     request_id = 0
     t_run_start = time.perf_counter()
 
@@ -249,7 +306,7 @@ def main() -> dict:
         target = int(label.item())
         t_sample = time.perf_counter()
 
-        pred, elected_chain = route_inference(
+        pred, elected_chain, n_overrides = route_inference(
             image_tensor=img,
             target_label=target,
             tracker=tracker,
@@ -262,7 +319,10 @@ def main() -> dict:
             trust_buffers=trust_buffers,
             timeout_ms=args.timeout_ms,
             max_fallbacks=args.max_fallbacks,
+            base_thresholds=base_thresholds,
+            trust_exit_adjustment=args.trust_exit_adjustment,
         )
+        trust_override_total += n_overrides
         request_id += 1
         sample_ms = (time.perf_counter() - t_sample) * 1000
         total_latency_ms += sample_ms
@@ -304,6 +364,7 @@ def main() -> dict:
         "reliability": 100.0 * completed / total_f,
         "dropped_responses": 100.0 * dropped_total / total_f,
         "avg_latency_ms": total_latency_ms / total_f,
+        "trust_override_count": trust_override_total,
         "exit_distribution": [c / max(n, 1) for c in exit_counts],
         "trust_vector": tracker.trust.tolist(),
         "peer_summary": tracker.peer_summary(),
