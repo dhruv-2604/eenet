@@ -78,6 +78,10 @@ def main() -> None:
                         help="Test images to route per (scenario, policy, seed) run")
     parser.add_argument("--seeds", type=str, default="0,1,2",
                         help="Comma-separated seed list, e.g. '0,1,2'")
+    parser.add_argument("--scenarios", type=str, default=",".join(SCENARIOS),
+                        help="Comma-separated scenarios to run: easy,medium,hard")
+    parser.add_argument("--policies", type=str, default=",".join(POLICIES),
+                        help="Comma-separated policies to run: random,trust")
     parser.add_argument("--results-dir", default="outputs/p2p_results")
     parser.add_argument("--pid-file", default="p2p_pids.json")
     parser.add_argument("--log-dir", default="p2p_logs")
@@ -87,17 +91,25 @@ def main() -> None:
                         help="Trust-adjustment factor for exit thresholds (0.0=off, 0.2=recommended)")
     args = parser.parse_args()
 
-    seed_list = [int(s.strip()) for s in args.seeds.split(",")]
+    seed_list = [int(s.strip()) for s in args.seeds.split(",") if s.strip()]
+    scenario_list = [s.strip() for s in args.scenarios.split(",") if s.strip()]
+    policy_list = [p.strip() for p in args.policies.split(",") if p.strip()]
+    unknown_scenarios = sorted(set(scenario_list) - set(SCENARIOS))
+    unknown_policies = sorted(set(policy_list) - set(POLICIES))
+    if unknown_scenarios:
+        parser.error("Unknown scenarios: {0}".format(", ".join(unknown_scenarios)))
+    if unknown_policies:
+        parser.error("Unknown policies: {0}".format(", ".join(unknown_policies)))
     os.makedirs(args.results_dir, exist_ok=True)
-    per_seed_results: dict = {(sc, po): [] for sc in SCENARIOS for po in POLICIES}
+    per_seed_results: dict = {(sc, po): [] for sc in scenario_list for po in policy_list}
 
-    for scenario in SCENARIOS:
+    for scenario in scenario_list:
         for seed in seed_list:
             print(f"\n{'='*65}")
             print(f"  SCENARIO={scenario.upper()}  SEED={seed}")
             print(f"{'='*65}")
 
-            for policy in POLICIES:
+            for policy in policy_list:
                 stop_network(args.pid_file)
                 time.sleep(1.0)
 
@@ -139,8 +151,8 @@ def main() -> None:
             time.sleep(2.0)
     metrics = ["accuracy", "reliability", "dropped_responses", "avg_latency_ms"]
     aggregated = []
-    for scenario in SCENARIOS:
-        for policy in POLICIES:
+    for scenario in scenario_list:
+        for policy in policy_list:
             runs = per_seed_results[(scenario, policy)]
             if not runs:
                 continue
@@ -175,7 +187,7 @@ def main() -> None:
     print(header)
     print("-" * len(header))
 
-    for scenario in SCENARIOS:
+    for scenario in scenario_list:
         rand_entry = next(
             (e for e in aggregated if e["scenario"] == scenario and e["policy"] == "random"), None
         )

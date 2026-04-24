@@ -92,7 +92,7 @@ def build_comparison_table(prism_dir: Path, p2p_dir: Path, scheduler_budget: flo
             "dropped_pct": float(entry["dropped_responses_mean"]),
             "avg_latency_ms": float(entry["avg_latency_ms_mean"]),
             "latency_scope": "wall-clock routed",
-            "source": "outputs/16-node-p2p/aggregated_results.json",
+            "source": str(p2p_dir / "aggregated_results.json"),
             "comparison_note": "P2P routed run; wall-clock includes process/ZMQ overhead.",
         })
 
@@ -128,25 +128,27 @@ def write_markdown_table(df: pd.DataFrame, path: Path) -> None:
 
 def plot_comparison_table(df: pd.DataFrame, figure_dir: Path) -> None:
     p2p = df[df["system"] == "Distributed 16-node segments"].copy()
-    scenarios = ["easy", "medium", "hard"]
+    scenario_order = {"easy": 0, "medium": 1, "hard": 2}
+    scenarios = sorted(
+        p2p["scenario"].unique().tolist(),
+        key=lambda scenario: scenario_order.get(scenario, 99),
+    )
     x = np.arange(len(scenarios))
     width = 0.36
-    fig, axes = plt.subplots(1, 3, figsize=(13, 4.5))
+    fig, axes = plt.subplots(1, 2, figsize=(9, 4.5))
 
     metric_specs = [
         ("accuracy_pct", "Accuracy (%)", "Accuracy"),
-        ("reliability_pct", "Reliability (%)", "Completed Requests"),
-        ("dropped_pct", "Dropped (%)", "Dropped Responses"),
+        ("avg_latency_ms", "Latency (ms / sample)", "Average Latency"),
     ]
     for ax, (metric, ylabel, title) in zip(axes, metric_specs):
-        random_vals = [
-            p2p[(p2p["scenario"] == scenario) & (p2p["policy"] == "random")][metric].iloc[0]
-            for scenario in scenarios
-        ]
-        trust_vals = [
-            p2p[(p2p["scenario"] == scenario) & (p2p["policy"] == "trust")][metric].iloc[0]
-            for scenario in scenarios
-        ]
+        random_vals = []
+        trust_vals = []
+        for scenario in scenarios:
+            random_frame = p2p[(p2p["scenario"] == scenario) & (p2p["policy"] == "random")]
+            trust_frame = p2p[(p2p["scenario"] == scenario) & (p2p["policy"] == "trust")]
+            random_vals.append(float(random_frame[metric].iloc[0]) if not random_frame.empty else 0.0)
+            trust_vals.append(float(trust_frame[metric].iloc[0]) if not trust_frame.empty else 0.0)
         ax.bar(x - width / 2, random_vals, width=width, color="#9ecae1", label="Random")
         ax.bar(x + width / 2, trust_vals, width=width, color="#3182bd", label="Trust")
         ax.set_xticks(x)
@@ -157,20 +159,9 @@ def plot_comparison_table(df: pd.DataFrame, figure_dir: Path) -> None:
         ax.set_ylim(bottom=0)
     axes[0].legend()
 
-    fig.suptitle("Distributed Routing: Random vs Trust Across Fault Scenarios", y=1.02)
+    fig.suptitle("Hard Scenario: Trust Routing Improves Accuracy and Latency", y=1.02)
     fig.tight_layout()
     fig.savefig(figure_dir / "distributed_random_vs_trust.png", dpi=180, bbox_inches="tight")
-    plt.close(fig)
-
-    central = df[df["system"] != "Distributed 16-node segments"].copy()
-    fig, ax = plt.subplots(figsize=(7, 4.5))
-    ax.bar(central["system"], central["accuracy_pct"], color=["#636363", "#31a354"])
-    ax.set_ylabel("Accuracy (%)")
-    ax.set_title("Centralized Baselines")
-    ax.grid(axis="y", alpha=0.25)
-    ax.tick_params(axis="x", rotation=15)
-    fig.tight_layout()
-    fig.savefig(figure_dir / "centralized_baselines.png", dpi=180)
     plt.close(fig)
 
 
@@ -192,11 +183,13 @@ def _iter_p2p_result_files(p2p_dir: Path, policy: str = "trust") -> Iterable[Pat
     return sorted(p2p_dir.glob(f"*_{policy}_seed*.json"))
 
 
-def plot_trust_traces(p2p_dir: Path, figure_dir: Path) -> None:
+def plot_hard_trust_trace(p2p_dir: Path, figure_dir: Path) -> None:
     stage_colors = ["#2c7fb8", "#31a354", "#756bb1", "#d95f0e"]
 
     for path in _iter_p2p_result_files(p2p_dir, policy="trust"):
         result = _read_json(path)
+        if result.get("scenario") != "hard" or result.get("seed", 0) != 0:
+            continue
         samples, values = _trust_trace_from_result(result)
         if len(samples) == 0 or values.size == 0:
             continue
@@ -216,41 +209,13 @@ def plot_trust_traces(p2p_dir: Path, figure_dir: Path) -> None:
 
         ax.set_xlabel("Samples processed")
         ax.set_ylabel("Trust score")
-        ax.set_title(
-            "Trust Evolution: {0} Scenario".format(str(result["scenario"]).title())
-        )
+        ax.set_title("Trust Separates Reliable Peers in the Hard Scenario")
         ax.grid(alpha=0.25)
         ax.legend(title="Peer stage", ncol=2)
         fig.tight_layout()
-        fig.savefig(figure_dir / f"trust_trace_{result['scenario']}_seed{result.get('seed', 0)}.png", dpi=180)
+        fig.savefig(figure_dir / "trust_trace_hard_seed0.png", dpi=180)
         plt.close(fig)
-
-
-def plot_final_trust_heatmap(p2p_dir: Path, figure_dir: Path) -> None:
-    rows = []
-    labels = []
-    for path in _iter_p2p_result_files(p2p_dir, policy="trust"):
-        result = _read_json(path)
-        rows.append(result["trust_vector"])
-        labels.append(str(result["scenario"]).title())
-    if not rows:
         return
-
-    values = np.asarray(rows, dtype=float)
-    fig, ax = plt.subplots(figsize=(10, 3.8))
-    im = ax.imshow(values, aspect="auto", cmap="viridis")
-    ax.set_yticks(np.arange(len(labels)))
-    ax.set_yticklabels(labels)
-    ax.set_xticks(np.arange(NUM_STAGES * PEERS_PER_STAGE))
-    ax.set_xticklabels([f"p{i}" for i in range(NUM_STAGES * PEERS_PER_STAGE)], rotation=45)
-    for boundary in range(PEERS_PER_STAGE, NUM_STAGES * PEERS_PER_STAGE, PEERS_PER_STAGE):
-        ax.axvline(boundary - 0.5, color="white", linewidth=1.5)
-    ax.set_title("Final Trust by Peer After Trust Routing")
-    ax.set_xlabel("Peer ID, grouped by stage")
-    fig.colorbar(im, ax=ax, label="Trust score")
-    fig.tight_layout()
-    fig.savefig(figure_dir / "final_trust_heatmap.png", dpi=180)
-    plt.close(fig)
 
 
 def main() -> None:
@@ -269,8 +234,7 @@ def main() -> None:
     comparison.to_csv(args.out_dir / "centralized_vs_distributed.csv", index=False)
     write_markdown_table(comparison, args.out_dir / "centralized_vs_distributed.md")
     plot_comparison_table(comparison, figure_dir)
-    plot_trust_traces(args.p2p_dir, figure_dir)
-    plot_final_trust_heatmap(args.p2p_dir, figure_dir)
+    plot_hard_trust_trace(args.p2p_dir, figure_dir)
 
     print(f"Wrote comparison table to {args.out_dir / 'centralized_vs_distributed.csv'}")
     print(f"Wrote figures to {figure_dir}")

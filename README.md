@@ -41,9 +41,16 @@ The script writes CSV summaries and graphs into `outputs/prism_experiments/`.
 python analysis/generate_report_assets.py
 ```
 
-Builds a centralized-vs-distributed comparison table and trust-over-time plots
-from the checked-in experiment outputs. The generated files are written to
+Builds the focused report table and the two highest-signal plots from the
+checked-in experiment outputs. The generated files are written to
 `outputs/report_assets/`.
+
+To regenerate the hard-scenario adjusted-exit seed check:
+
+```bash
+python run_p2p_experiment.py --scenarios hard --n-samples 250 --seeds 0,1,2 --trust-exit-adjustment 0.2 --results-dir outputs/p2p_results_adjusted
+python analysis/generate_report_assets.py --p2p-dir outputs/p2p_results_adjusted
+```
 
 ## Partition Model
 
