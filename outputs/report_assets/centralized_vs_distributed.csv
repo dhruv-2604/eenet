@@ -1,0 +1,5 @@
+system,scenario,policy,sample_count,accuracy_pct,reliability_pct,dropped_pct,avg_latency_ms,latency_scope,source,comparison_note
+Centralized full model,clean,single process,10000,75.74999928474426,100.0,0.0,0.748038,model-only local,exit_metrics.csv final exit,Full CIFAR-100 test set; model-only timing.
+Centralized EENet early exit,clean,EENet budget 6.50 ms,10000,55.73,100.0,0.0,0.5304283761999132,model-only local,budget_sweep.csv,Full CIFAR-100 test set; model-only timing.
+Distributed 16-node segments,hard,random,250,46.4,90.13333333333333,9.866666666666667,59.6966590632995,wall-clock routed,outputs/p2p_results_adjusted/aggregated_results.json,P2P routed run; wall-clock includes process/ZMQ overhead.
+Distributed 16-node segments,hard,trust,250,56.13333333333333,90.13333333333333,9.866666666666667,41.46271609639128,wall-clock routed,outputs/p2p_results_adjusted/aggregated_results.json,P2P routed run; wall-clock includes process/ZMQ overhead.
