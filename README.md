@@ -54,6 +54,13 @@ python run_p2p_experiment.py --scenarios hard --n-samples 250 --seeds 0,1,2 --tr
 python analysis/generate_report_assets.py --p2p-dir outputs/p2p_results_adjusted
 ```
 
+To compare trust routing with and without trust-coupled exit thresholds:
+
+```bash
+python run_p2p_experiment.py --scenarios hard --policies trust --n-samples 250 --seeds 0,1,2 --trust-exit-adjustment 0.0 --results-dir outputs/p2p_results_no_exit_adjustment
+python analysis/generate_report_assets.py --p2p-dir outputs/p2p_results_adjusted --no-exit-adjustment-dir outputs/p2p_results_no_exit_adjustment
+```
+
 ## Partition Model
 
 ```bash

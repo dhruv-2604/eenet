@@ -13,7 +13,7 @@ import argparse
 import json
 import os
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Optional
 
 import matplotlib
 
@@ -25,6 +25,7 @@ import pandas as pd
 
 DEFAULT_PRISM_DIR = Path("outputs/prism_experiments_full")
 DEFAULT_P2P_DIR = Path("outputs/16-node-p2p")
+DEFAULT_NO_EXIT_ADJUSTMENT_DIR = Path("outputs/p2p_results_no_exit_adjustment")
 DEFAULT_OUT_DIR = Path("outputs/report_assets")
 DEFAULT_SCHEDULER_BUDGET = 6.5
 NUM_STAGES = 4
@@ -218,10 +219,81 @@ def plot_hard_trust_trace(p2p_dir: Path, figure_dir: Path) -> None:
         return
 
 
+def _hard_trust_summary(results_dir: Path) -> Optional[dict]:
+    path = results_dir / "aggregated_results.json"
+    if not path.exists():
+        return None
+    for entry in _read_json(path):
+        if entry.get("scenario") == "hard" and entry.get("policy") == "trust":
+            return entry
+    return None
+
+
+def plot_trust_exit_adjustment_gain(
+    no_adjustment_dir: Path,
+    adjusted_dir: Path,
+    figure_dir: Path,
+) -> None:
+    baseline = _hard_trust_summary(no_adjustment_dir)
+    adjusted = _hard_trust_summary(adjusted_dir)
+    if baseline is None or adjusted is None:
+        return
+
+    labels = ["Trust routing\nexit adjust = 0.0", "Trust routing\nexit adjust = 0.2"]
+    means = [float(baseline["accuracy_mean"]), float(adjusted["accuracy_mean"])]
+    stds = [float(baseline["accuracy_std"]), float(adjusted["accuracy_std"])]
+    per_seed = [
+        [float(run["accuracy"]) for run in baseline.get("per_seed", [])],
+        [float(run["accuracy"]) for run in adjusted.get("per_seed", [])],
+    ]
+    gain = means[1] - means[0]
+
+    fig, ax = plt.subplots(figsize=(7.5, 4.8))
+    colors = ["#9ecae1", "#3182bd"]
+    x = np.arange(len(labels))
+    ax.bar(x, means, yerr=stds, capsize=6, width=0.58, color=colors, edgecolor="#17324d")
+
+    for idx, values in enumerate(per_seed):
+        offsets = np.linspace(-0.09, 0.09, num=max(len(values), 1))
+        ax.scatter(
+            np.full(len(values), x[idx]) + offsets[: len(values)],
+            values,
+            color="#f28e2b",
+            edgecolor="#5f3b00",
+            zorder=3,
+            s=42,
+            label="seed result" if idx == 0 else None,
+        )
+
+    y_max = max(mean + std for mean, std in zip(means, stds)) + 10.0
+    ax.text(
+        0.5,
+        y_max - 4.0,
+        f"Mean gain: +{gain:.1f} percentage points",
+        ha="center",
+        va="center",
+        fontsize=12,
+        fontweight="bold",
+        color="#17324d",
+        bbox={"boxstyle": "round,pad=0.35", "facecolor": "white", "edgecolor": "#17324d"},
+    )
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels)
+    ax.set_ylabel("Accuracy (%)")
+    ax.set_ylim(0, y_max)
+    ax.set_title("Hard Scenario: Trust-Coupled Exits Improve Accuracy")
+    ax.grid(axis="y", alpha=0.25)
+    ax.legend(loc="upper left")
+    fig.tight_layout()
+    fig.savefig(figure_dir / "trust_exit_adjustment_accuracy_gain.png", dpi=180)
+    plt.close(fig)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate PRISM report assets.")
     parser.add_argument("--prism-dir", type=Path, default=DEFAULT_PRISM_DIR)
     parser.add_argument("--p2p-dir", type=Path, default=DEFAULT_P2P_DIR)
+    parser.add_argument("--no-exit-adjustment-dir", type=Path, default=DEFAULT_NO_EXIT_ADJUSTMENT_DIR)
     parser.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)
     parser.add_argument("--scheduler-budget", type=float, default=DEFAULT_SCHEDULER_BUDGET)
     args = parser.parse_args()
@@ -235,6 +307,7 @@ def main() -> None:
     write_markdown_table(comparison, args.out_dir / "centralized_vs_distributed.md")
     plot_comparison_table(comparison, figure_dir)
     plot_hard_trust_trace(args.p2p_dir, figure_dir)
+    plot_trust_exit_adjustment_gain(args.no_exit_adjustment_dir, args.p2p_dir, figure_dir)
 
     print(f"Wrote comparison table to {args.out_dir / 'centralized_vs_distributed.csv'}")
     print(f"Wrote figures to {figure_dir}")
