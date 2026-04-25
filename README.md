@@ -45,6 +45,8 @@ Builds the focused report table and the two highest-signal plots from the
 checked-in experiment outputs. The generated files are written to
 `outputs/report_assets/`.
 
+Report-ready graph images are also collected in `graphs/` for easier review.
+
 To regenerate the hard-scenario adjusted-exit seed check:
 
 ```bash
