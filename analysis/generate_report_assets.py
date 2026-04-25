@@ -26,6 +26,8 @@ import pandas as pd
 DEFAULT_PRISM_DIR = Path("outputs/prism_experiments_full")
 DEFAULT_P2P_DIR = Path("outputs/16-node-p2p")
 DEFAULT_NO_EXIT_ADJUSTMENT_DIR = Path("outputs/p2p_results_no_exit_adjustment")
+DEFAULT_TUNED_EXIT_ADJUSTMENT_DIR = Path("outputs/p2p_results_exit_adjustment_0_1")
+DEFAULT_TUNED_EXIT_ADJUSTMENT = 0.1
 DEFAULT_OUT_DIR = Path("outputs/report_assets")
 DEFAULT_SCHEDULER_BUDGET = 6.5
 NUM_STAGES = 4
@@ -231,15 +233,16 @@ def _hard_trust_summary(results_dir: Path) -> Optional[dict]:
 
 def plot_trust_exit_adjustment_gain(
     no_adjustment_dir: Path,
-    adjusted_dir: Path,
+    tuned_adjustment_dir: Path,
     figure_dir: Path,
+    tuned_adjustment: float,
 ) -> None:
     baseline = _hard_trust_summary(no_adjustment_dir)
-    adjusted = _hard_trust_summary(adjusted_dir)
+    adjusted = _hard_trust_summary(tuned_adjustment_dir)
     if baseline is None or adjusted is None:
         return
 
-    labels = ["Trust routing\nexit adjust = 0.0", "Trust routing\nexit adjust = 0.2"]
+    labels = ["Trust routing\nexit adjust = 0.0", f"Trust routing\nexit adjust = {tuned_adjustment:.1f}"]
     means = [float(baseline["accuracy_mean"]), float(adjusted["accuracy_mean"])]
     stds = [float(baseline["accuracy_std"]), float(adjusted["accuracy_std"])]
     per_seed = [
@@ -301,19 +304,21 @@ def _hard_policy_summary(results_dir: Path, policy: str) -> Optional[dict]:
 
 def plot_hard_accuracy_gain_stack(
     no_adjustment_dir: Path,
-    adjusted_dir: Path,
+    random_baseline_dir: Path,
+    tuned_adjustment_dir: Path,
     figure_dir: Path,
+    tuned_adjustment: float,
 ) -> None:
-    random_summary = _hard_policy_summary(adjusted_dir, "random")
+    random_summary = _hard_policy_summary(random_baseline_dir, "random")
     trust_no_adjust = _hard_policy_summary(no_adjustment_dir, "trust")
-    trust_adjusted = _hard_policy_summary(adjusted_dir, "trust")
+    trust_adjusted = _hard_policy_summary(tuned_adjustment_dir, "trust")
     if random_summary is None or trust_no_adjust is None or trust_adjusted is None:
         return
 
     labels = [
         "Random\nrouting",
         "Trust routing\nexit adjust = 0.0",
-        "Trust routing\nexit adjust = 0.2",
+        f"Trust routing\nexit adjust = {tuned_adjustment:.1f}",
     ]
     summaries = [random_summary, trust_no_adjust, trust_adjusted]
     means = [float(item["accuracy_mean"]) for item in summaries]
@@ -394,6 +399,8 @@ def main() -> None:
     parser.add_argument("--prism-dir", type=Path, default=DEFAULT_PRISM_DIR)
     parser.add_argument("--p2p-dir", type=Path, default=DEFAULT_P2P_DIR)
     parser.add_argument("--no-exit-adjustment-dir", type=Path, default=DEFAULT_NO_EXIT_ADJUSTMENT_DIR)
+    parser.add_argument("--tuned-exit-adjustment-dir", type=Path, default=DEFAULT_TUNED_EXIT_ADJUSTMENT_DIR)
+    parser.add_argument("--tuned-exit-adjustment", type=float, default=DEFAULT_TUNED_EXIT_ADJUSTMENT)
     parser.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)
     parser.add_argument("--scheduler-budget", type=float, default=DEFAULT_SCHEDULER_BUDGET)
     args = parser.parse_args()
@@ -407,8 +414,19 @@ def main() -> None:
     write_markdown_table(comparison, args.out_dir / "centralized_vs_distributed.md")
     plot_comparison_table(comparison, figure_dir)
     plot_hard_trust_trace(args.p2p_dir, figure_dir)
-    plot_trust_exit_adjustment_gain(args.no_exit_adjustment_dir, args.p2p_dir, figure_dir)
-    plot_hard_accuracy_gain_stack(args.no_exit_adjustment_dir, args.p2p_dir, figure_dir)
+    plot_trust_exit_adjustment_gain(
+        args.no_exit_adjustment_dir,
+        args.tuned_exit_adjustment_dir,
+        figure_dir,
+        args.tuned_exit_adjustment,
+    )
+    plot_hard_accuracy_gain_stack(
+        args.no_exit_adjustment_dir,
+        args.p2p_dir,
+        args.tuned_exit_adjustment_dir,
+        figure_dir,
+        args.tuned_exit_adjustment,
+    )
 
     print(f"Wrote comparison table to {args.out_dir / 'centralized_vs_distributed.csv'}")
     print(f"Wrote figures to {figure_dir}")

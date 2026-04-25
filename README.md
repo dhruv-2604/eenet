@@ -58,11 +58,12 @@ To compare trust routing with and without trust-coupled exit thresholds:
 
 ```bash
 python run_p2p_experiment.py --scenarios hard --policies trust --n-samples 250 --seeds 0,1,2 --trust-exit-adjustment 0.0 --results-dir outputs/p2p_results_no_exit_adjustment
-python analysis/generate_report_assets.py --p2p-dir outputs/p2p_results_adjusted --no-exit-adjustment-dir outputs/p2p_results_no_exit_adjustment
+python run_p2p_experiment.py --scenarios hard --policies trust --n-samples 250 --seeds 0,1,2 --trust-exit-adjustment 0.1 --results-dir outputs/p2p_results_exit_adjustment_0_1
+python analysis/generate_report_assets.py --p2p-dir outputs/p2p_results_adjusted --no-exit-adjustment-dir outputs/p2p_results_no_exit_adjustment --tuned-exit-adjustment-dir outputs/p2p_results_exit_adjustment_0_1 --tuned-exit-adjustment 0.1
 ```
 
 This also generates `hard_scenario_accuracy_gains.png`, which shows the hard-scenario
-gain from random routing to trust-aware routing with trust-coupled exits.
+gain from random routing to trust-aware routing with tuned trust-coupled exits.
 
 ## Partition Model
 
