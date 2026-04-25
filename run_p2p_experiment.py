@@ -47,7 +47,7 @@ def stop_network(pid_file: str) -> None:
 
 
 def run_router(policy: str, scenario: str, n_samples: int, output_json: str, seed: int,
-               trust_exit_adjustment: float = 0.0) -> int:
+               trust_exit_adjustment: float = 0.2) -> int:
     cmd = [
         PYTHON, os.path.join(ROOT, "router.py"),
         "--policy", policy,
@@ -55,9 +55,8 @@ def run_router(policy: str, scenario: str, n_samples: int, output_json: str, see
         "--n-samples", str(n_samples),
         "--output-json", output_json,
         "--seed", str(seed),
+        "--trust-exit-adjustment", str(trust_exit_adjustment),
     ]
-    if trust_exit_adjustment != 0.0:
-        cmd += ["--trust-exit-adjustment", str(trust_exit_adjustment)]
     return _run(cmd)
 
 
@@ -87,7 +86,7 @@ def main() -> None:
     parser.add_argument("--log-dir", default="p2p_logs")
     parser.add_argument("--wait-secs", type=float, default=18.0,
                         help="Seconds to wait for peers to start (MPS warmup needs ~15s)")
-    parser.add_argument("--trust-exit-adjustment", type=float, default=0.0,
+    parser.add_argument("--trust-exit-adjustment", type=float, default=0.2,
                         help="Trust-adjustment factor for exit thresholds (0.0=off, 0.2=recommended)")
     args = parser.parse_args()
 
