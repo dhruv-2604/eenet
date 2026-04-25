@@ -289,6 +289,106 @@ def plot_trust_exit_adjustment_gain(
     plt.close(fig)
 
 
+def _hard_policy_summary(results_dir: Path, policy: str) -> Optional[dict]:
+    path = results_dir / "aggregated_results.json"
+    if not path.exists():
+        return None
+    for entry in _read_json(path):
+        if entry.get("scenario") == "hard" and entry.get("policy") == policy:
+            return entry
+    return None
+
+
+def plot_hard_accuracy_gain_stack(
+    no_adjustment_dir: Path,
+    adjusted_dir: Path,
+    figure_dir: Path,
+) -> None:
+    random_summary = _hard_policy_summary(adjusted_dir, "random")
+    trust_no_adjust = _hard_policy_summary(no_adjustment_dir, "trust")
+    trust_adjusted = _hard_policy_summary(adjusted_dir, "trust")
+    if random_summary is None or trust_no_adjust is None or trust_adjusted is None:
+        return
+
+    labels = [
+        "Random\nrouting",
+        "Trust routing\nexit adjust = 0.0",
+        "Trust routing\nexit adjust = 0.2",
+    ]
+    summaries = [random_summary, trust_no_adjust, trust_adjusted]
+    means = [float(item["accuracy_mean"]) for item in summaries]
+    stds = [float(item["accuracy_std"]) for item in summaries]
+    per_seed = [
+        [float(run["accuracy"]) for run in item.get("per_seed", [])]
+        for item in summaries
+    ]
+    mean_gain = means[2] - means[0]
+    seed_gains = [
+        adjusted - random
+        for random, adjusted in zip(per_seed[0], per_seed[2])
+    ]
+
+    fig, axes = plt.subplots(
+        1,
+        2,
+        figsize=(11.5, 4.8),
+        gridspec_kw={"width_ratios": [1.35, 1.0]},
+    )
+    x = np.arange(len(labels))
+    colors = ["#c7dcef", "#7fb3d5", "#2c7fb8"]
+
+    axes[0].bar(x, means, yerr=stds, capsize=6, width=0.6, color=colors, edgecolor="#17324d")
+    for idx, values in enumerate(per_seed):
+        offsets = np.linspace(-0.08, 0.08, num=max(len(values), 1))
+        axes[0].scatter(
+            np.full(len(values), x[idx]) + offsets[: len(values)],
+            values,
+            color="#f28e2b",
+            edgecolor="#5f3b00",
+            zorder=3,
+            s=38,
+            label="seed result" if idx == 0 else None,
+        )
+    axes[0].set_xticks(x)
+    axes[0].set_xticklabels(labels)
+    axes[0].set_ylabel("Accuracy (%)")
+    axes[0].set_title("Hard Scenario Accuracy")
+    axes[0].set_ylim(0, max(mean + std for mean, std in zip(means, stds)) + 10)
+    axes[0].grid(axis="y", alpha=0.25)
+    axes[0].legend(loc="upper left")
+    axes[0].text(
+        1.0,
+        axes[0].get_ylim()[1] - 5.0,
+        f"Mean gain vs random: +{mean_gain:.1f} pp",
+        ha="center",
+        va="center",
+        fontsize=11,
+        fontweight="bold",
+        color="#17324d",
+        bbox={"boxstyle": "round,pad=0.35", "facecolor": "white", "edgecolor": "#17324d"},
+    )
+
+    seed_labels = [f"Seed {idx}" for idx in range(len(seed_gains))]
+    gain_colors = ["#2c7fb8" if gain >= 0 else "#d95f0e" for gain in seed_gains]
+    axes[1].bar(np.arange(len(seed_gains)), seed_gains, color=gain_colors, edgecolor="#17324d")
+    axes[1].axhline(0, color="#17324d", linewidth=1.0)
+    axes[1].set_xticks(np.arange(len(seed_gains)))
+    axes[1].set_xticklabels(seed_labels)
+    axes[1].set_ylabel("Accuracy gain vs random (pp)")
+    axes[1].set_title("Seed-Level Gain")
+    axes[1].set_ylim(min(seed_gains) - 3.0, max(seed_gains) + 3.0)
+    axes[1].grid(axis="y", alpha=0.25)
+    for idx, gain in enumerate(seed_gains):
+        va = "bottom" if gain >= 0 else "top"
+        offset = 0.8 if gain >= 0 else -0.8
+        axes[1].text(idx, gain + offset, f"{gain:+.1f}", ha="center", va=va, fontweight="bold")
+
+    fig.suptitle("Trust-Aware Routing + Exits Improve Hard-Scenario Accuracy", y=1.04)
+    fig.tight_layout()
+    fig.savefig(figure_dir / "hard_scenario_accuracy_gains.png", dpi=180, bbox_inches="tight")
+    plt.close(fig)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate PRISM report assets.")
     parser.add_argument("--prism-dir", type=Path, default=DEFAULT_PRISM_DIR)
@@ -308,6 +408,7 @@ def main() -> None:
     plot_comparison_table(comparison, figure_dir)
     plot_hard_trust_trace(args.p2p_dir, figure_dir)
     plot_trust_exit_adjustment_gain(args.no_exit_adjustment_dir, args.p2p_dir, figure_dir)
+    plot_hard_accuracy_gain_stack(args.no_exit_adjustment_dir, args.p2p_dir, figure_dir)
 
     print(f"Wrote comparison table to {args.out_dir / 'centralized_vs_distributed.csv'}")
     print(f"Wrote figures to {figure_dir}")

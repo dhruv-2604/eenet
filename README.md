@@ -61,6 +61,9 @@ python run_p2p_experiment.py --scenarios hard --policies trust --n-samples 250 -
 python analysis/generate_report_assets.py --p2p-dir outputs/p2p_results_adjusted --no-exit-adjustment-dir outputs/p2p_results_no_exit_adjustment
 ```
 
+This also generates `hard_scenario_accuracy_gains.png`, which shows the hard-scenario
+gain from random routing to trust-aware routing with trust-coupled exits.
+
 ## Partition Model
 
 ```bash
