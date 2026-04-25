@@ -47,10 +47,38 @@ def _nearest_budget_row(budget_df: pd.DataFrame, method: str, budget: float) -> 
     return frame.sort_values(["budget_delta", "budget_ms"]).iloc[0]
 
 
-def build_comparison_table(prism_dir: Path, p2p_dir: Path, scheduler_budget: float) -> pd.DataFrame:
+def _replace_hard_trust_with_tuned(p2p_summary: list, tuned_adjustment_dir: Path) -> list:
+    tuned = _hard_policy_summary(tuned_adjustment_dir, "trust")
+    if tuned is None:
+        return p2p_summary
+    tuned = dict(tuned)
+    tuned["_source"] = str(tuned_adjustment_dir / "aggregated_results.json")
+
+    replaced = []
+    did_replace = False
+    for entry in p2p_summary:
+        if entry.get("scenario") == "hard" and entry.get("policy") == "trust":
+            replaced.append(tuned)
+            did_replace = True
+        else:
+            replaced.append(entry)
+    if not did_replace:
+        replaced.append(tuned)
+    return replaced
+
+
+def build_comparison_table(
+    prism_dir: Path,
+    p2p_dir: Path,
+    scheduler_budget: float,
+    tuned_adjustment_dir: Path,
+) -> pd.DataFrame:
     exit_df = pd.read_csv(prism_dir / "exit_metrics.csv")
     budget_df = pd.read_csv(prism_dir / "budget_sweep.csv")
-    p2p_summary = _read_json(p2p_dir / "aggregated_results.json")
+    p2p_summary = _replace_hard_trust_with_tuned(
+        _read_json(p2p_dir / "aggregated_results.json"),
+        tuned_adjustment_dir,
+    )
 
     final_exit = exit_df.sort_values("exit").iloc[-1]
     eenet_row = _nearest_budget_row(budget_df, "EENet", scheduler_budget)
@@ -95,7 +123,7 @@ def build_comparison_table(prism_dir: Path, p2p_dir: Path, scheduler_budget: flo
             "dropped_pct": float(entry["dropped_responses_mean"]),
             "avg_latency_ms": float(entry["avg_latency_ms_mean"]),
             "latency_scope": "wall-clock routed",
-            "source": str(p2p_dir / "aggregated_results.json"),
+            "source": str(entry.get("_source", p2p_dir / "aggregated_results.json")),
             "comparison_note": "P2P routed run; wall-clock includes process/ZMQ overhead.",
         })
 
@@ -129,7 +157,7 @@ def write_markdown_table(df: pd.DataFrame, path: Path) -> None:
     path.write_text("\n".join(lines) + "\n")
 
 
-def plot_comparison_table(df: pd.DataFrame, figure_dir: Path) -> None:
+def plot_comparison_table(df: pd.DataFrame, figure_dir: Path, tuned_adjustment: float) -> None:
     p2p = df[df["system"] == "Distributed 16-node segments"].copy()
     scenario_order = {"easy": 0, "medium": 1, "hard": 2}
     scenarios = sorted(
@@ -153,7 +181,13 @@ def plot_comparison_table(df: pd.DataFrame, figure_dir: Path) -> None:
             random_vals.append(float(random_frame[metric].iloc[0]) if not random_frame.empty else 0.0)
             trust_vals.append(float(trust_frame[metric].iloc[0]) if not trust_frame.empty else 0.0)
         ax.bar(x - width / 2, random_vals, width=width, color="#9ecae1", label="Random")
-        ax.bar(x + width / 2, trust_vals, width=width, color="#3182bd", label="Trust")
+        ax.bar(
+            x + width / 2,
+            trust_vals,
+            width=width,
+            color="#3182bd",
+            label=f"Trust (exit adjust={tuned_adjustment:.1f})",
+        )
         ax.set_xticks(x)
         ax.set_xticklabels([scenario.title() for scenario in scenarios])
         ax.set_ylabel(ylabel)
@@ -162,7 +196,7 @@ def plot_comparison_table(df: pd.DataFrame, figure_dir: Path) -> None:
         ax.set_ylim(bottom=0)
     axes[0].legend()
 
-    fig.suptitle("Hard Scenario: Trust Routing Improves Accuracy and Latency", y=1.02)
+    fig.suptitle("Hard Scenario: Tuned Trust Routing Improves Accuracy and Latency", y=1.02)
     fig.tight_layout()
     fig.savefig(figure_dir / "distributed_random_vs_trust.png", dpi=180, bbox_inches="tight")
     plt.close(fig)
@@ -409,11 +443,16 @@ def main() -> None:
     figure_dir = args.out_dir / "figures"
     figure_dir.mkdir(parents=True, exist_ok=True)
 
-    comparison = build_comparison_table(args.prism_dir, args.p2p_dir, args.scheduler_budget)
+    comparison = build_comparison_table(
+        args.prism_dir,
+        args.p2p_dir,
+        args.scheduler_budget,
+        args.tuned_exit_adjustment_dir,
+    )
     comparison.to_csv(args.out_dir / "centralized_vs_distributed.csv", index=False)
     write_markdown_table(comparison, args.out_dir / "centralized_vs_distributed.md")
-    plot_comparison_table(comparison, figure_dir)
-    plot_hard_trust_trace(args.p2p_dir, figure_dir)
+    plot_comparison_table(comparison, figure_dir, args.tuned_exit_adjustment)
+    plot_hard_trust_trace(args.tuned_exit_adjustment_dir, figure_dir)
     plot_trust_exit_adjustment_gain(
         args.no_exit_adjustment_dir,
         args.tuned_exit_adjustment_dir,

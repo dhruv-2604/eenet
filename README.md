@@ -47,11 +47,11 @@ checked-in experiment outputs. The generated files are written to
 
 Report-ready graph images are also collected in `graphs/` for easier review.
 
-To regenerate the hard-scenario adjusted-exit seed check:
+To regenerate the tuned hard-scenario adjusted-exit seed check:
 
 ```bash
-python run_p2p_experiment.py --scenarios hard --n-samples 250 --seeds 0,1,2 --trust-exit-adjustment 0.2 --results-dir outputs/p2p_results_adjusted
-python analysis/generate_report_assets.py --p2p-dir outputs/p2p_results_adjusted
+python run_p2p_experiment.py --scenarios hard --policies trust --n-samples 250 --seeds 0,1,2 --trust-exit-adjustment 0.1 --results-dir outputs/p2p_results_exit_adjustment_0_1
+python analysis/generate_report_assets.py --p2p-dir outputs/p2p_results_adjusted --tuned-exit-adjustment-dir outputs/p2p_results_exit_adjustment_0_1 --tuned-exit-adjustment 0.1
 ```
 
 To compare trust routing with and without trust-coupled exit thresholds:
