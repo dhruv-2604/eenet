@@ -240,8 +240,8 @@ def main() -> dict:
                         help="Flush trust buffers every N samples")
     parser.add_argument("--max-fallbacks", type=int, default=1,
                         help="Max peers to try per stage before dropping")
-    parser.add_argument("--trust-exit-adjustment", type=float, default=0.2,
-                        help="Trust-adjustment factor for exit thresholds (0.0=off, 0.2=recommended, 0.5=aggressive)")
+    parser.add_argument("--trust-exit-adjustment", type=float, default=0.1,
+                        help="Trust-adjustment factor for exit thresholds (0.0=off, 0.1=recommended, 0.5=aggressive)")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--output-json", type=str, default=None)
     parser.add_argument("--ea-pkl", type=str, default=_DEFAULT_EA_PKL,
