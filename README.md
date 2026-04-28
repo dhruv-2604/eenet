@@ -1,4 +1,4 @@
-# EENet — Decentralized Early Exit CNN Inference
+# EENet — Distributed Early Exit CNN Inference
 
 Adaptive inference with early exiting for multi-exit DNNs. Easy samples exit early; harder ones continue deeper. Based on [Ilhan et al., WACV 2024](https://arxiv.org/abs/2301.07099).
 
