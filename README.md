@@ -5,7 +5,7 @@ Adaptive inference with early exiting for multi-exit DNNs. Easy samples exit ear
 The trust scoring implementation is based on EigenTrust, with reference to the
 [PygenTrust implementation](https://github.com/mattyTokenomics/PygenTrust).
 
-## Setup
+### Experiments + Setup
 
 ```bash
 python3 -m venv .venv
@@ -14,48 +14,34 @@ python3 -m pip install --upgrade pip
 python3 -m pip install -r requirements.txt
 ```
 
-Requires Python 3.8+.
+this requires Python 3.8+
 
 ## Train
-
-```bash
-python3 main.py --data-root datasets --data cifar100 --arch densenet121_4 --use-valid
-```
+`python3 main.py --data-root datasets --data cifar100 --arch densenet121_4 --use-valid`
 
 ## Phase 2: EENet Scheduling
 
-```bash
-python3 run_scheduling.py --evaluate-from outputs/report_demo_train/save_models/checkpoint_000.pth.tar
-```
+`python3 run_scheduling.py --evaluate-from outputs/report_demo_train/save_models/checkpoint_000.pth.tar`
 
 Trains exit scoring functions (gk) for each budget level and compares against entropy baseline.
 
 ## Distributed Trust Experiments
 
-```bash
-python3 run_experiments.py --n-samples 250 --seeds 0,1,2
-```
+`python3 run_experiments.py --n-samples 250 --seeds 0,1,2`
 
-Launches the distributed peer network and routes CIFAR-100 samples through the
-segmented DenseNet121 model for:
-- easy, medium, and hard fault scenarios
-- random vs. trust-based routing
-- per-seed JSON logs and aggregated accuracy / reliability / latency summaries
+This launches the distributed peer network and routes CIFAR-100 samples through the
+segmented DenseNet121 model for easy, medium, and hard fault scenarios for random vs. trust-based routing.
 
 The script writes per-run JSON files and `aggregated_results.json` into
-`outputs/results/` by default.
+`outputs/results/` by default. These are the results. 
 
 To run only the hard scenario with tuned trust-coupled exits:
 
-```bash
-python3 run_experiments.py --scenarios hard --policies random,trust --n-samples 250 --seeds 0,1,2 --trust-exit-adjustment 0.1 --results-dir outputs/results_exit_adjustment_0_1
-```
+`python3 run_experiments.py --scenarios hard --policies random,trust --n-samples 250 --seeds 0,1,2 --trust-exit-adjustment 0.1 --results-dir outputs/results_exit_adjustment_0_1`
 
 ## Report Assets
 
-```bash
-python3 analysis/generate_report_assets.py
-```
+`python3 analysis/generate_report_assets.py`
 
 Builds the focused report table and the two highest-signal plots from the
 checked-in experiment outputs. The generated files are written to
@@ -80,7 +66,7 @@ python3 analysis/generate_report_assets.py --results-dir outputs/results --no-ex
 
 This also generates `hard_scenario_accuracy_gains_exit_adjust_0_1.png`, which shows
 the hard-scenario gain from random routing to trust-aware routing with tuned
-trust-coupled exits.
+trust-coupled exits
 
 ## Partition Model
 
