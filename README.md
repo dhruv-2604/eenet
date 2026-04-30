@@ -25,7 +25,7 @@ python3 main.py --data-root datasets --data cifar100 --arch densenet121_4 --use-
 ## Phase 2: EENet Scheduling
 
 ```bash
-python3 run_scheduling.py
+python3 run_scheduling.py --evaluate-from outputs/report_demo_train/save_models/checkpoint_000.pth.tar
 ```
 
 Trains exit scoring functions (gk) for each budget level and compares against entropy baseline.

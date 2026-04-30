@@ -19,7 +19,7 @@ Inter-segment protocol for distributed inference:
   score_vector grows by 1 element per exit processed.
 
 Usage:
-    cd EENet && python partition_model.py
+    python3 partition_model.py
 """
 import os, sys, math, pickle as pkl
 import numpy as np
@@ -38,7 +38,7 @@ from utils.predict_helpers import prepare_input
 from utils.predict_utils import test_exit_assigner
 
 # ── Config ─────────────────────────────────────────────────────────────────
-MODEL_PATH   = 'outputs/densenet121_4_cifar100/save_models/model_best.pth.tar'
+MODEL_PATH   = 'outputs/report_demo_train/save_models/checkpoint_000.pth.tar'
 SAVE_PATH    = 'outputs/densenet121_4_None_cifar100'
 SEGMENTS_DIR = 'outputs/segments'
 DATA_ROOT    = 'datasets'
