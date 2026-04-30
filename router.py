@@ -4,8 +4,8 @@ router to elect peers based on trust and route inference requests through them.
 then collects results and tracks trust updates over time.
 
 Usage:
-    python router.py --policy trust --scenario medium --n-samples 1000 \
-        --output-json outputs/p2p_results/medium_trust.json
+    python3 router.py --policy trust --scenario medium --n-samples 1000 \
+        --output-json outputs/results/medium_trust.json
 """
 
 import argparse
@@ -24,7 +24,7 @@ import torchvision
 import torchvision.transforms as T
 import zmq
 
-from p2p_config import peer_id_to_port, peers_by_stage, PEERS_PER_STAGE
+from network_config import peer_id_to_port, peers_by_stage, PEERS_PER_STAGE
 from trust.eigentrust import EigenTrustTracker, compute_score_calibration
 
 CIFAR100_MEAN = [0.5071, 0.4867, 0.4408]
@@ -230,7 +230,7 @@ def route_inference(
 
 
 def main() -> dict:
-    parser = argparse.ArgumentParser(description="PRISM P2P router")
+    parser = argparse.ArgumentParser(description="PRISM distributed router")
     parser.add_argument("--policy", default="trust", choices=["trust", "random"])
     parser.add_argument("--scenario", default="easy", choices=["easy", "medium", "hard"])
     parser.add_argument("--n-samples", type=int, default=1000)

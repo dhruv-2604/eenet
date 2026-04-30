@@ -4,7 +4,7 @@ Kill all PRISM peer processes recorded in a PID file.
 Sends SIGTERM first, waits briefly, then SIGKILL any survivors.
 
 Usage:
-    python stop_network.py [--pid-file p2p_pids.json]
+    python3 stop_network.py [--pid-file network_pids.json]
 """
 
 import argparse
@@ -15,8 +15,8 @@ import time
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Stop PRISM P2P network")
-    parser.add_argument("--pid-file", default="p2p_pids.json")
+    parser = argparse.ArgumentParser(description="Stop PRISM distributed network")
+    parser.add_argument("--pid-file", default="network_pids.json")
     parser.add_argument("--wait-secs", type=float, default=2.0)
     args = parser.parse_args()
 

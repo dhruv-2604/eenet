@@ -5,7 +5,7 @@ Spawn 16 PRISM peer processes (4 stages × 4 peers).
 We use build_peer_profiles() to build peer profiles.
 stop_network used to stop the network by killing all PIDs in the json we write to.
 Usage:
-    python launch_network.py --scenario medium --seed 0
+    python3 launch_network.py --scenario medium --seed 0
 """
 
 import argparse
@@ -17,18 +17,18 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from p2p_config import STAGE_PORTS, SEGMENT_PATHS, PEERS_PER_STAGE
+from network_config import STAGE_PORTS, SEGMENT_PATHS, PEERS_PER_STAGE
 from trust.routing import build_peer_profiles
 
 PYTHON = sys.executable  
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Launch PRISM P2P network")
+    parser = argparse.ArgumentParser(description="Launch PRISM distributed network")
     parser.add_argument("--scenario", default="easy", choices=["easy", "medium", "hard"])
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--pid-file", default="p2p_pids.json")
-    parser.add_argument("--log-dir", default="p2p_logs")
+    parser.add_argument("--pid-file", default="network_pids.json")
+    parser.add_argument("--log-dir", default="network_logs")
     parser.add_argument("--wait-secs", type=float, default=18.0,
                         help="Seconds to wait for peers to bind before returning")
     args = parser.parse_args()

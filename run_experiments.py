@@ -3,7 +3,7 @@
 launch peers, run experiments, log results.
 
 Usage:
-    python run_p2p_experiment.py --n-samples 5000 --seeds 0,1,2
+    python3 run_experiments.py --n-samples 5000 --seeds 0,1,2
 """
 
 import argparse
@@ -72,7 +72,7 @@ def _mean_std(values: list) -> tuple:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="PRISM P2P experiment suite")
+    parser = argparse.ArgumentParser(description="PRISM distributed experiment suite")
     parser.add_argument("--n-samples", type=int, default=5000,
                         help="Test images to route per (scenario, policy, seed) run")
     parser.add_argument("--seeds", type=str, default="0,1,2",
@@ -81,9 +81,9 @@ def main() -> None:
                         help="Comma-separated scenarios to run: easy,medium,hard")
     parser.add_argument("--policies", type=str, default=",".join(POLICIES),
                         help="Comma-separated policies to run: random,trust")
-    parser.add_argument("--results-dir", default="outputs/p2p_results")
-    parser.add_argument("--pid-file", default="p2p_pids.json")
-    parser.add_argument("--log-dir", default="p2p_logs")
+    parser.add_argument("--results-dir", default="outputs/results")
+    parser.add_argument("--pid-file", default="network_pids.json")
+    parser.add_argument("--log-dir", default="network_logs")
     parser.add_argument("--wait-secs", type=float, default=18.0,
                         help="Seconds to wait for peers to start (MPS warmup needs ~15s)")
     parser.add_argument("--trust-exit-adjustment", type=float, default=0.1,
@@ -177,7 +177,7 @@ def main() -> None:
     n_samples = args.n_samples
     col_w = 22
     print(f"\n{'='*72}")
-    print(f"  P2P EXPERIMENT RESULTS ({n_samples} samples × {n_seeds} seeds)")
+    print(f"  DISTRIBUTED EXPERIMENT RESULTS ({n_samples} samples × {n_seeds} seeds)")
     print(f"{'='*72}")
     header = (
         f"{'Scenario':<10} | {'Random (mean±std)':<{col_w}} | "
