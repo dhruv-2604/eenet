@@ -3,8 +3,9 @@
 Generate report-ready comparison tables and trust visualizations.
 
 This script intentionally reads the checked-in experiment outputs instead of
-rerunning training or the P2P network. It creates a compact "centralized vs.
-distributed" table and trust-over-time plots from the 16-node P2P JSON traces.
+rerunning training or the distributed network. It creates a compact
+"centralized vs. distributed" table and trust-over-time plots from the
+16-node distributed JSON traces.
 """
 
 from __future__ import annotations
@@ -24,9 +25,9 @@ import pandas as pd
 
 
 DEFAULT_PRISM_DIR = Path("outputs/prism_experiments_full")
-DEFAULT_P2P_DIR = Path("outputs/16-node-p2p")
-DEFAULT_NO_EXIT_ADJUSTMENT_DIR = Path("outputs/p2p_results_no_exit_adjustment")
-DEFAULT_TUNED_EXIT_ADJUSTMENT_DIR = Path("outputs/p2p_results_exit_adjustment_0_1")
+DEFAULT_RESULTS_DIR = Path("outputs/16-node-network")
+DEFAULT_NO_EXIT_ADJUSTMENT_DIR = Path("outputs/results_no_exit_adjustment")
+DEFAULT_TUNED_EXIT_ADJUSTMENT_DIR = Path("outputs/results_exit_adjustment_0_1")
 DEFAULT_TUNED_EXIT_ADJUSTMENT = 0.1
 DEFAULT_OUT_DIR = Path("outputs/report_assets")
 DEFAULT_SCHEDULER_BUDGET = 6.5
@@ -47,16 +48,16 @@ def _nearest_budget_row(budget_df: pd.DataFrame, method: str, budget: float) -> 
     return frame.sort_values(["budget_delta", "budget_ms"]).iloc[0]
 
 
-def _replace_hard_trust_with_tuned(p2p_summary: list, tuned_adjustment_dir: Path) -> list:
+def _replace_hard_trust_with_tuned(results_summary: list, tuned_adjustment_dir: Path) -> list:
     tuned = _hard_policy_summary(tuned_adjustment_dir, "trust")
     if tuned is None:
-        return p2p_summary
+        return results_summary
     tuned = dict(tuned)
     tuned["_source"] = str(tuned_adjustment_dir / "aggregated_results.json")
 
     replaced = []
     did_replace = False
-    for entry in p2p_summary:
+    for entry in results_summary:
         if entry.get("scenario") == "hard" and entry.get("policy") == "trust":
             replaced.append(tuned)
             did_replace = True
@@ -69,14 +70,14 @@ def _replace_hard_trust_with_tuned(p2p_summary: list, tuned_adjustment_dir: Path
 
 def build_comparison_table(
     prism_dir: Path,
-    p2p_dir: Path,
+    results_dir: Path,
     scheduler_budget: float,
     tuned_adjustment_dir: Path,
 ) -> pd.DataFrame:
     exit_df = pd.read_csv(prism_dir / "exit_metrics.csv")
     budget_df = pd.read_csv(prism_dir / "budget_sweep.csv")
-    p2p_summary = _replace_hard_trust_with_tuned(
-        _read_json(p2p_dir / "aggregated_results.json"),
+    results_summary = _replace_hard_trust_with_tuned(
+        _read_json(results_dir / "aggregated_results.json"),
         tuned_adjustment_dir,
     )
 
@@ -112,7 +113,7 @@ def build_comparison_table(
         },
     ]
 
-    for entry in p2p_summary:
+    for entry in results_summary:
         rows.append({
             "system": "Distributed 16-node segments",
             "scenario": str(entry["scenario"]),
@@ -123,8 +124,8 @@ def build_comparison_table(
             "dropped_pct": float(entry["dropped_responses_mean"]),
             "avg_latency_ms": float(entry["avg_latency_ms_mean"]),
             "latency_scope": "wall-clock routed",
-            "source": str(entry.get("_source", p2p_dir / "aggregated_results.json")),
-            "comparison_note": "P2P routed run; wall-clock includes process/ZMQ overhead.",
+            "source": str(entry.get("_source", results_dir / "aggregated_results.json")),
+            "comparison_note": "Distributed routed run; wall-clock includes process/ZMQ overhead.",
         })
 
     table = pd.DataFrame(rows)
@@ -149,19 +150,25 @@ def write_markdown_table(df: pd.DataFrame, path: Path) -> None:
     display = df.copy()
     for col in ["accuracy_pct", "reliability_pct", "dropped_pct", "avg_latency_ms"]:
         display[col] = display[col].map(lambda value: f"{value:.2f}")
+    rows = [
+        "| " + " | ".join(display.columns) + " |",
+        "| " + " | ".join(["---"] * len(display.columns)) + " |",
+    ]
+    for _, row in display.iterrows():
+        rows.append("| " + " | ".join(str(row[col]) for col in display.columns) + " |")
     lines = [
-        display.to_markdown(index=False),
+        "\n".join(rows),
         "",
-        "Note: centralized rows use full-test model-only metrics; distributed rows use the checked-in routed P2P runs, so latency scopes differ.",
+        "Note: centralized rows use full-test model-only metrics; distributed rows use the checked-in routed distributed runs, so latency scopes differ.",
     ]
     path.write_text("\n".join(lines) + "\n")
 
 
 def plot_comparison_table(df: pd.DataFrame, figure_dir: Path, tuned_adjustment: float) -> None:
-    p2p = df[df["system"] == "Distributed 16-node segments"].copy()
+    distributed = df[df["system"] == "Distributed 16-node segments"].copy()
     scenario_order = {"easy": 0, "medium": 1, "hard": 2}
     scenarios = sorted(
-        p2p["scenario"].unique().tolist(),
+        distributed["scenario"].unique().tolist(),
         key=lambda scenario: scenario_order.get(scenario, 99),
     )
     x = np.arange(len(scenarios))
@@ -176,8 +183,8 @@ def plot_comparison_table(df: pd.DataFrame, figure_dir: Path, tuned_adjustment: 
         random_vals = []
         trust_vals = []
         for scenario in scenarios:
-            random_frame = p2p[(p2p["scenario"] == scenario) & (p2p["policy"] == "random")]
-            trust_frame = p2p[(p2p["scenario"] == scenario) & (p2p["policy"] == "trust")]
+            random_frame = distributed[(distributed["scenario"] == scenario) & (distributed["policy"] == "random")]
+            trust_frame = distributed[(distributed["scenario"] == scenario) & (distributed["policy"] == "trust")]
             random_vals.append(float(random_frame[metric].iloc[0]) if not random_frame.empty else 0.0)
             trust_vals.append(float(trust_frame[metric].iloc[0]) if not trust_frame.empty else 0.0)
         ax.bar(x - width / 2, random_vals, width=width, color="#9ecae1", label="Random")
@@ -216,14 +223,14 @@ def _trust_trace_from_result(result: dict) -> tuple[list[int], np.ndarray]:
     return samples, values
 
 
-def _iter_p2p_result_files(p2p_dir: Path, policy: str = "trust") -> Iterable[Path]:
-    return sorted(p2p_dir.glob(f"*_{policy}_seed*.json"))
+def _iter_result_files(results_dir: Path, policy: str = "trust") -> Iterable[Path]:
+    return sorted(results_dir.glob(f"*_{policy}_seed*.json"))
 
 
-def plot_hard_trust_trace(p2p_dir: Path, figure_dir: Path) -> None:
+def plot_hard_trust_trace(results_dir: Path, figure_dir: Path) -> None:
     stage_colors = ["#2c7fb8", "#31a354", "#756bb1", "#d95f0e"]
 
-    for path in _iter_p2p_result_files(p2p_dir, policy="trust"):
+    for path in _iter_result_files(results_dir, policy="trust"):
         result = _read_json(path)
         if result.get("scenario") != "hard" or result.get("seed", 0) != 0:
             continue
@@ -431,7 +438,7 @@ def plot_hard_accuracy_gain_stack(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate PRISM report assets.")
     parser.add_argument("--prism-dir", type=Path, default=DEFAULT_PRISM_DIR)
-    parser.add_argument("--p2p-dir", type=Path, default=DEFAULT_P2P_DIR)
+    parser.add_argument("--results-dir", type=Path, default=DEFAULT_RESULTS_DIR)
     parser.add_argument("--no-exit-adjustment-dir", type=Path, default=DEFAULT_NO_EXIT_ADJUSTMENT_DIR)
     parser.add_argument("--tuned-exit-adjustment-dir", type=Path, default=DEFAULT_TUNED_EXIT_ADJUSTMENT_DIR)
     parser.add_argument("--tuned-exit-adjustment", type=float, default=DEFAULT_TUNED_EXIT_ADJUSTMENT)
@@ -445,7 +452,7 @@ def main() -> None:
 
     comparison = build_comparison_table(
         args.prism_dir,
-        args.p2p_dir,
+        args.results_dir,
         args.scheduler_budget,
         args.tuned_exit_adjustment_dir,
     )
@@ -461,7 +468,7 @@ def main() -> None:
     )
     plot_hard_accuracy_gain_stack(
         args.no_exit_adjustment_dir,
-        args.p2p_dir,
+        args.results_dir,
         args.tuned_exit_adjustment_dir,
         figure_dir,
         args.tuned_exit_adjustment,

@@ -1,6 +1,7 @@
 .DS_store
 .idea
 *.pyc
-outputs/p2p_results*/
-p2p_logs/
-p2p_pids.json
+outputs/results_*/
+outputs/report_assets_verify/
+network_logs*/
+network_pids*.json

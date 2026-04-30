@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-runs our p2p processes
+runs our distributed peer processes
 Loads segment, binds a ZMQ socket, and request servicing from router.
 also included real fault injection scenarios for drop, latency spike, and output corruption.
 Usage:
-    python peer.py --peer-id 0 --stage-idx 0 --port 5551 \
+    python3 peer.py --peer-id 0 --stage-idx 0 --port 5551 \
         --segment-path outputs/segments/segment1.pt \
         --drop-prob 0.0 --corrupt-prob 0.0 \
         --spike-prob 0.02 --spike-scale 1.15 \

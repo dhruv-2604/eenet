@@ -1,4 +1,4 @@
-"""Shared port and peer-ID layout for PRISM P2P network."""
+"""Shared port and peer-ID layout for the PRISM distributed network."""
 
 NUM_STAGES = 4
 PEERS_PER_STAGE = 4 
