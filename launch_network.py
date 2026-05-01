@@ -36,12 +36,15 @@ def main() -> None:
     os.makedirs(args.log_dir, exist_ok=True)
     root = os.path.dirname(os.path.abspath(__file__))
 
+    # print(f"[debug] scenario={args.scenario} seed={args.seed}")
     profiles = build_peer_profiles(
         num_stages=4,
         replicas_per_stage=PEERS_PER_STAGE,
         scenario=args.scenario,
         seed=args.seed,
     )
+    faulty_count = sum(1 for profile in profiles if profile.faulty)
+    # print(f"[debug] starting {len(profiles)} nodes, faulty={faulty_count}")
 
     pids: list[int] = []
     for profile in profiles:
@@ -67,6 +70,7 @@ def main() -> None:
         if profile.faulty:
             cmd.append("--faulty")
 
+        # one log per node
         log_fh = open(log_path, "w")
         proc = subprocess.Popen(cmd, cwd=root, stdout=log_fh, stderr=subprocess.STDOUT)
         pids.append(proc.pid)
@@ -76,6 +80,7 @@ def main() -> None:
         )
 
     with open(args.pid_file, "w") as fh:
+        # save pids for cleanup
         json.dump(
             {"pids": pids, "scenario": args.scenario, "seed": args.seed},
             fh,

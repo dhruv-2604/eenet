@@ -7,6 +7,7 @@ from .eigentrust import EigenTrustTracker, compute_score_calibration
 
 
 SCENARIO_CONFIGS = {
+    # fault settings
     "easy": {
         "faulty_fraction": 0.0,
         "drop_prob": 0.0,
@@ -58,13 +59,16 @@ def build_peer_profiles(
     peer_id = 0
 
     for stage_idx in range(num_stages):
+        # choose faulty replicas
         faulty_flags = rng.random(replicas_per_stage) < config["faulty_fraction"]
         if faulty_flags.all():
+            # keep one good node
             faulty_flags[rng.integers(0, replicas_per_stage)] = False
 
         for replica_idx in range(replicas_per_stage):
             faulty = bool(faulty_flags[replica_idx])
             if faulty:
+                # choose fault type
                 fault_mode = rng.choice(["drop", "corrupt", "slow", "mixed"])
                 drop_prob = config["drop_prob"] if fault_mode in ("drop", "mixed") else 0.02
                 corrupt_prob = config["corrupt_prob"] if fault_mode in ("corrupt", "mixed") else 0.02
@@ -104,6 +108,7 @@ def _adjust_threshold(
     mean = stage_trusts.mean()
     spread = stage_trusts.max() - stage_trusts.min()
     deviation = (peer_trust - mean) / (spread + 1e-9)
+    # adjust by trust
     adjusted = base_threshold - trust_scale * deviation * base_threshold
     low = min(0.0, base_threshold)
     high = max(1.0, base_threshold)
@@ -119,6 +124,7 @@ def _mutate_prediction(
     if rng.random() >= corrupt_prob:
         return updated
 
+    # force wrong class
     sorted_indices = np.argsort(updated)
     wrong_idx = int(sorted_indices[-2] if len(sorted_indices) > 1 else sorted_indices[-1])
     updated = np.full_like(updated, 1e-6)
@@ -182,6 +188,7 @@ def simulate_routing_policy(
         for stage_idx in range(num_stages):
             stage_peers = list(peers_by_stage[stage_idx])
             if policy == "trust":
+                # try best node first
                 stage_peers.sort(key=lambda item: tracker.trust[item.peer_id], reverse=True)
             else:
                 rng.shuffle(stage_peers)

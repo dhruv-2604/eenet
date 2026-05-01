@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-Generate report-ready comparison tables and trust visualizations.
+Build the tables and plots used in the project report.
 
-This script intentionally reads the checked-in experiment outputs instead of
-rerunning training or the distributed network. It creates a compact
-"centralized vs. distributed" table and trust-over-time plots from the
-16-node distributed JSON traces.
+This reads saved experiment outputs instead of rerunning the distributed
+network. The main outputs are the centralized-vs-distributed table, the trust
+trace plot, and the hard-scenario accuracy charts.
 """
 
 from __future__ import annotations
@@ -49,6 +48,8 @@ def _nearest_budget_row(budget_df: pd.DataFrame, method: str, budget: float) -> 
 
 
 def _replace_hard_trust_with_tuned(results_summary: list, tuned_adjustment_dir: Path) -> list:
+    # The main results folder has the broad scenario sweep. For the hard trust
+    # row, use the tuned run because that is the value we report in the slides.
     tuned = _hard_policy_summary(tuned_adjustment_dir, "trust")
     if tuned is None:
         return results_summary
@@ -159,7 +160,7 @@ def write_markdown_table(df: pd.DataFrame, path: Path) -> None:
     lines = [
         "\n".join(rows),
         "",
-        "Note: centralized rows use full-test model-only metrics; distributed rows use the checked-in routed distributed runs, so latency scopes differ.",
+        "Note: centralized rows use full-test model-only metrics; distributed rows use saved routed runs, so latency scopes differ.",
     ]
     path.write_text("\n".join(lines) + "\n")
 
@@ -278,6 +279,8 @@ def plot_trust_exit_adjustment_gain(
     figure_dir: Path,
     tuned_adjustment: float,
 ) -> None:
+    # This isolates the exit-threshold change: trust routing is on in both
+    # bars, but the second run lets trust shift the exit threshold.
     baseline = _hard_trust_summary(no_adjustment_dir)
     adjusted = _hard_trust_summary(tuned_adjustment_dir)
     if baseline is None or adjusted is None:
@@ -350,6 +353,8 @@ def plot_hard_accuracy_gain_stack(
     figure_dir: Path,
     tuned_adjustment: float,
 ) -> None:
+    # This is the slide chart: random routing, trust routing, and trust routing
+    # with the tuned exit adjustment.
     random_summary = _hard_policy_summary(random_baseline_dir, "random")
     trust_no_adjust = _hard_policy_summary(no_adjustment_dir, "trust")
     trust_adjusted = _hard_policy_summary(tuned_adjustment_dir, "trust")
@@ -436,7 +441,7 @@ def plot_hard_accuracy_gain_stack(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate PRISM report assets.")
+    parser = argparse.ArgumentParser(description="Build report tables and figures.")
     parser.add_argument("--prism-dir", type=Path, default=DEFAULT_PRISM_DIR)
     parser.add_argument("--results-dir", type=Path, default=DEFAULT_RESULTS_DIR)
     parser.add_argument("--no-exit-adjustment-dir", type=Path, default=DEFAULT_NO_EXIT_ADJUSTMENT_DIR)

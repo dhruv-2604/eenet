@@ -37,6 +37,7 @@ _DEFAULT_EA_PKL = os.path.join(_ROOT, "outputs", "densenet121_4_None_cifar100", 
 
 
 def _load_exit_thresholds(pkl_path: str) -> list:
+    # load EENet thresholds
     sys.path.insert(0, os.path.join(_ROOT, "utils"))
     with open(pkl_path, "rb") as fh:
         ea = pickle.load(fh)
@@ -61,6 +62,7 @@ def _make_req(ctx: zmq.Context, peer_id: int, timeout_ms: int) -> zmq.Socket:
 
 
 def _rebuild_socket(ctx: zmq.Context, sockets: dict, peer_id: int, timeout_ms: int) -> None:
+    # reset socket after timeout
     sockets[peer_id].close()
     sockets[peer_id] = _make_req(ctx, peer_id, timeout_ms)
 
@@ -97,6 +99,7 @@ def flush_trust_buffers(trust_buffers: dict, tracker: EigenTrustTracker) -> None
     for peer_id, buf in trust_buffers.items():
         if len(buf["scores"]) < 2:
             continue
+        # update trust from recent samples
         scores = np.array(buf["scores"], dtype=np.float64)
         correct = np.array(buf["correct"], dtype=np.float64)
         latency = np.array(buf["latency_ok"], dtype=np.float64)
@@ -153,6 +156,7 @@ def route_inference(
             if attempt >= max_fallbacks:
                 break
 
+            # send activation to node
             msg = {
                 "request_id": request_id,
                 "feat": feat,
@@ -174,6 +178,7 @@ def route_inference(
                 trust_buffers[peer_id]["latency_ok"].append(0)
                 continue
 
+            # save node result for trust update
             elected = peer_id
             response = resp
             elapsed = resp["elapsed_ms"]
@@ -196,6 +201,7 @@ def route_inference(
 
         peer_should_exit = bool(response.get("should_exit", False))
         if trust_exit_adjustment > 0.0 and policy == "trust":
+            # shift threshold using trust
             peer_trust = float(tracker.trust[elected])
             avg_trust = float(np.mean([tracker.trust[p] for p in _PEERS_BY_STAGE[stage_idx]]))
             trust_ratio = peer_trust / (avg_trust + 1e-9)
@@ -219,6 +225,7 @@ def route_inference(
         feat = response["feat"]
         new_score = response.get("score")      
         if new_score is not None:
+            # keep scores for later exits
             if past_scores is None:
                 past_scores = new_score.unsqueeze(1)            
             else:
@@ -267,8 +274,10 @@ def main() -> dict:
     if trust_adjustment_enabled:
         base_thresholds = _load_exit_thresholds(args.ea_pkl)
         print(f"[router] exit thresholds: {[f'{t:.4f}' for t in base_thresholds]}")
+        # print(f"[debug] exit adjustment = {args.trust_exit_adjustment}")
     else:
         base_thresholds = [0.0] * NUM_STAGES
+        # print("[debug] exit adjustment off")
 
     transform = T.Compose([T.ToTensor(), T.Normalize(CIFAR100_MEAN, CIFAR100_STD)])
     test_dataset = torchvision.datasets.CIFAR100(
@@ -288,6 +297,7 @@ def main() -> dict:
     sockets = make_all_sockets(ctx, args.timeout_ms)
     print("[router] connected to 16 peer sockets")
     tracker = EigenTrustTracker(n_peers=16, alpha=0.1, trust_scale=0.2, decay=0.85)
+    # print(f"[debug] trust window = {args.trust_update_window}")
     rng = np.random.default_rng(args.seed)
 
     trust_buffers: dict = defaultdict(lambda: {"scores": [], "correct": [], "latency_ok": []})

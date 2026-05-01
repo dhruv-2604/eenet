@@ -41,7 +41,7 @@ def main() -> None:
                         help="Inference device: auto | cpu | mps | cuda")
     args = parser.parse_args()
 
-    # Resolve inference device
+    # pick device
     if args.device == "auto":
         if torch.backends.mps.is_available():
             device = torch.device("mps")
@@ -58,7 +58,7 @@ def main() -> None:
     segment = segment.to(device)
     segment.eval()
 
-    # warm up sim
+    # warm up once
     _WARMUP_SHAPES = {
         0: (1, 3, 32, 32),
         1: (1, 48, 16, 16),
@@ -77,6 +77,8 @@ def main() -> None:
             ps_d = (torch.zeros(1, past_size).to(device)
                     if past_size is not None else None)
             segment.compute_score(logit_d, past_scores=ps_d)
+    # print(f"{tag} warmup complete", flush=True)
+
     ctx = zmq.Context()
     sock = ctx.socket(zmq.REP)
     sock.setsockopt(zmq.LINGER, 0)
@@ -102,8 +104,7 @@ def main() -> None:
         req_id = msg["request_id"]
         t0 = time.perf_counter()
 
-        # drop scneario
-        
+        # drop request
         if rng.random() < args.drop_prob:
             elapsed_ms = (time.perf_counter() - t0) * 1000
             print(f"{tag} req={req_id} elapsed={elapsed_ms:.1f}ms status=dropped", flush=True)
@@ -118,7 +119,7 @@ def main() -> None:
                 pass
             continue
 
-        # latency spike scneario
+        # slow request
         if rng.random() < args.spike_prob:
             sleep_s = args.latency_multiplier * args.spike_scale * 0.008
             time.sleep(sleep_s)
@@ -129,6 +130,7 @@ def main() -> None:
         past_scores = raw_past.to(device) if raw_past is not None else None
         is_corrupted = False
 
+        # run segment
         with torch.no_grad():
             if args.stage_idx == 3:
                 logit = segment(feat_in).cpu()
@@ -143,7 +145,7 @@ def main() -> None:
                 logit = logit.cpu()
                 score = score.cpu()
 
-        # corrupt scneario
+        # corrupt output
         if rng.random() < args.corrupt_prob:
             is_corrupted = True
             with torch.no_grad():

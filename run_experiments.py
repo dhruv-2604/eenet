@@ -24,6 +24,7 @@ POLICIES = ["random", "trust"]
 
 
 def _run(cmd: list, **kwargs) -> int:
+    # show command
     label = " ".join(os.path.basename(c) if c.endswith(".py") else c for c in cmd)
     print(f"\n$ {label}")
     result = subprocess.run(cmd, cwd=ROOT, **kwargs)
@@ -100,6 +101,8 @@ def main() -> None:
     if unknown_policies:
         parser.error("Unknown policies: {0}".format(", ".join(unknown_policies)))
     os.makedirs(args.results_dir, exist_ok=True)
+    # print(f"[debug] scenarios={scenario_list} policies={policy_list} seeds={seed_list}")
+    # print(f"[debug] results dir={args.results_dir}")
     per_seed_results: dict = {(sc, po): [] for sc in scenario_list for po in policy_list}
 
     for scenario in scenario_list:
@@ -109,6 +112,7 @@ def main() -> None:
             print(f"{'='*65}")
 
             for policy in policy_list:
+                # restart network
                 stop_network(args.pid_file)
                 time.sleep(1.0)
 
@@ -140,6 +144,7 @@ def main() -> None:
                     trust_exit_adjustment=args.trust_exit_adjustment,
                 )
                 if os.path.exists(out_json):
+                    # collect result
                     with open(out_json) as fh:
                         per_seed_results[(scenario, policy)].append(json.load(fh))
 

@@ -8,6 +8,7 @@ import numpy as np
 
 
 def _normalise_rows(matrix: np.ndarray) -> np.ndarray:
+    # normalize rows
     row_sums = matrix.sum(axis=1, keepdims=True)
     row_sums = np.where(row_sums == 0, 1.0, row_sums)
     return matrix / row_sums
@@ -33,6 +34,7 @@ def eigentrust(
     matrix = _normalise_rows(np.asarray(local_trust, dtype=np.float64))
     trust = pre_trust.copy()
     for _ in range(max_iter):
+        # iterate trust
         updated = (1.0 - alpha) * matrix.T.dot(trust) + alpha * pre_trust
         if np.abs(updated - trust).sum() < epsilon:
             trust = updated
@@ -45,6 +47,7 @@ def compute_score_calibration(scores: np.ndarray, correct: np.ndarray) -> float:
     """
     Map the Pearson correlation between score and correctness onto [0, 1].
     """
+    # not enough data yet
     if len(scores) < 5:
         return 0.5
 
@@ -83,6 +86,7 @@ class EigenTrustTracker:
         self.decay = decay
         self.pre_trust = pre_trust
 
+        # start even
         self.C = np.ones((n_peers, n_peers), dtype=np.float64) - np.eye(n_peers)
         self.C /= max(n_peers - 1, 1)
 
@@ -142,6 +146,7 @@ class EigenTrustTracker:
         }
 
     def _rebuild_local_trust(self, updated_peer: int) -> None:
+        # decay old trust
         self.C *= self.decay
 
         quality = (
@@ -155,4 +160,3 @@ class EigenTrustTracker:
             self.C[observer, updated_peer] = max(0.0, quality)
 
         self.C = _normalise_rows(self.C)
-
