@@ -7,12 +7,12 @@ The system builds on two prior ideas: EENet for learned early-exit CNN inference
 
 ## What We Built
 
-- Partitioned a 4-exit DenseNet121 model into 4 sequential inference stages
+- Segmented a 4 exit DenseNet121 model into 4 sequential inference stages
 - Replicated each stage across 4 independent OS processes, for 16 total nodes
-- Used ZMQ over TCP for router-to-node communication
+- Used ZMQ over TCP for router to node communication
 - Added fault injection for dropped, corrupted, and slow node responses
 - Adapted EigenTrust to score nodes using accuracy, latency, and confidence calibration
-- Added trust-aware routing and trust-coupled early-exit thresholds
+- Added trust aware routing and trust-coupled early exit thresholds
 
 
 ## How This Extends EENet
