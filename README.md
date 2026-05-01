@@ -19,11 +19,11 @@ this requires Python 3.8+
 ## Train
 `python3 main.py --data-root datasets --data cifar100 --arch densenet121_4 --use-valid`
 
-## Phase 2: EENet Scheduling
+## EENet Scheduling
 
 `python3 run_scheduling.py --evaluate-from outputs/report_demo_train/save_models/checkpoint_000.pth.tar`
 
-Trains exit scoring functions (gk) for each budget level and compares against entropy baseline.
+Trains exit scoring functions for each budget level and compares against entropy baseline.
 
 ## Distributed Trust Experiments
 
@@ -32,8 +32,8 @@ Trains exit scoring functions (gk) for each budget level and compares against en
 This launches the distributed peer network and routes CIFAR-100 samples through the
 segmented DenseNet121 model for easy, medium, and hard fault scenarios for random vs. trust-based routing.
 
-The script writes per-run JSON files and `aggregated_results.json` into
-`outputs/results/` by default. These are the results. 
+The script writes the result JSON files and `aggregated_results.json` into
+`outputs/results/` by default
 
 To run only the hard scenario with tuned trust-coupled exits:
 
@@ -43,13 +43,11 @@ To run only the hard scenario with tuned trust-coupled exits:
 
 `python3 analysis/generate_report_assets.py`
 
-Builds the focused report table and the two highest-signal plots from the
-checked-in experiment outputs. The generated files are written to
-`outputs/report_assets/`.
+This builds the report table and two plots from the
+experiment outputs. The generated files are in 
+`outputs/report_assets/` Graph images are also collected in `graphs/`.
 
-Report-ready graph images are also collected in `graphs/` for easier review.
-
-To regenerate the tuned hard-scenario adjusted-exit seed check:
+To regenerate for hard-scenario:
 
 ```bash
 python3 run_experiments.py --scenarios hard --policies trust --n-samples 250 --seeds 0,1,2 --trust-exit-adjustment 0.1 --results-dir outputs/results_exit_adjustment_0_1
@@ -68,14 +66,6 @@ This also generates `hard_scenario_accuracy_gains_exit_adjust_0_1.png`, which sh
 the hard-scenario gain from random routing to trust-aware routing with tuned
 trust-coupled exits
 
-## Partition Model
-
-```bash
-python3 partition_model.py
-```
-
-Splits the trained model into 4 segments for distributed inference. Each segment includes its exit classifier, scorer, and threshold. Verifies outputs match end-to-end.
-
-## Parameters
+You can also partition the model with `python3 partition_model.py`. This splits the trained model into 4 segments for distributed inference
 
 All training/inference/model parameters are in `config.py`.
